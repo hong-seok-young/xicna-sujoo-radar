@@ -51,9 +51,8 @@ jobs:
           EAIS_API_KEY:     ${{ secrets.DATA_GO_KR_KEY }}
         run: |
           mkdir -p data/raw data/filtered data/cache data/logs
-          # 첫 클라우드 실행은 EAIS 캐시가 없어 매우 느림(22분+) → 임시로 EAIS 스킵
-          # 다음 단계: 캐시 채워지면 EAIS 재활성화
-          python scripts/run_weekly.py --no-open --skip eais
+          # EAIS 포함 풀파이프라인. 첫 sweep 은 ~22분(900 API), 이후 캐시로 빠름
+          python scripts/run_weekly.py --no-open
 
       - name: Locate + verify report (품질 검증)
         id: verify

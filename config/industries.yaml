@@ -1,0 +1,57 @@
+# 산업군 분류 정의
+# Stage 2 LLM 프롬프트에서 사용.
+
+industries:
+  - code: "SEMI_CR"
+    name: "반도체CR"
+    description: "반도체 FAB, 클린룸, 패키징, 후공정, 전공정, 웨이퍼 공장"
+    keywords: ["반도체", "FAB", "팹", "클린룸", "패키징", "후공정", "전공정", "EUV", "웨이퍼", "OSAT", "테스트베드"]
+
+  - code: "GENERAL"
+    name: "일반생산"
+    description: "일반 제조 공장, 스마트팩토리, 물류센터, 산업단지"
+    keywords: ["공장신축", "생산공장", "스마트팩토리", "물류창고", "물류센터", "산업단지", "공장증설", "제조시설"]
+
+  - code: "GMP_BIO"
+    name: "GMP제약바이오"
+    description: "제약·바이오 GMP 공장, CDMO, 백신, 세포배양, 원료의약품"
+    keywords: ["제약", "바이오", "GMP", "CGMP", "BGMP", "바이오플랜트", "백신공장", "세포배양", "원료의약품", "CDMO", "CMO"]
+
+  - code: "FOOD"
+    name: "식품음료"
+    description: "식품·음료 공장, HACCP, 냉장물류, 콜드체인"
+    keywords: ["식품공장", "HACCP", "냉장물류", "콜드체인", "식품제조", "음료공장", "가공시설"]
+
+  - code: "COSMETIC"
+    name: "화장품"
+    description: "화장품 OEM/ODM 공장, CGMP 인증 시설"
+    keywords: ["화장품공장", "OEM", "ODM", "CGMP", "뷰티"]
+
+  - code: "RND"
+    name: "연구시설R&D"
+    description: "R&D센터, 연구소, 기술원, 실증센터"
+    keywords: ["R&D센터", "연구소", "기술연구원", "실증센터", "혁신센터", "파일럿플랜트"]
+
+  - code: "BATTERY"
+    name: "이차전지"
+    description: "배터리 셀·양극재·음극재 공장, 기가팩토리, ESS"
+    keywords: ["기가팩토리", "배터리셀", "양극재", "음극재", "분리막", "전해질", "ESS", "전구체"]
+
+  - code: "EXCLUDE"
+    name: "제외대상"
+    description: "주택·오피스텔, 관급공사, 공공 인프라 (도로·교량·항만 등)"
+    keywords: ["아파트", "오피스텔", "주상복합", "재건축", "재개발", "관급", "도로공사", "교량", "항만", "지하철"]
+
+# 영업팀 요구사항 (필터 기준)
+business_filters:
+  min_amount_billion_krw: 450    # 최소 450억 원
+  max_amount_trillion_krw: 1     # 최대 1조 미만
+  regions_include:
+    - "대한민국"
+    - "베트남"
+    - "폴란드"
+    - "인도"
+    - "중국"
+    - "미국"
+  client_revenue_min_billion_krw: 1000  # 발주처 매출액 1,000억 이상
+  client_investment_min_billion_krw: 450

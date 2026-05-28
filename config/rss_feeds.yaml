@@ -1,0 +1,241 @@
+# RSS 피드 설정 — 2026-05-20 전수 검증 + URL 재탐색 후 정리.
+# tier 1: 검증 완료, 즉시 사용 가능 (entry 1개 이상 / 최근 7일 내 글)
+# tier 2: 봇 차단/URL 변경 등으로 RSS 우회 또는 직접 크롤링 필요한 매체
+# tier 3: 도메인 다운/RSS 폐지 — 보류
+
+feeds:
+  # ─────────────────────────────────────────────────────────
+  # Tier 1 — 산업/경제 카테고리 (수주레이더 도메인 최적합)
+  # ─────────────────────────────────────────────────────────
+  - name: "연합뉴스(산업)"
+    url: "https://www.yna.co.kr/rss/industry.xml"
+    tier: 1
+    domain: "yna.co.kr"
+  - name: "연합뉴스(경제)"
+    url: "https://www.yna.co.kr/rss/economy.xml"
+    tier: 1
+    domain: "yna.co.kr"
+  - name: "뉴시스(산업)"
+    url: "https://www.newsis.com/RSS/industry.xml"
+    tier: 1
+    domain: "newsis.com"
+  - name: "뉴시스(경제)"
+    url: "https://www.newsis.com/RSS/economy.xml"
+    tier: 1
+    domain: "newsis.com"
+  - name: "이투데이(산업)"
+    url: "https://rss.etoday.co.kr/eto/industry_news.xml"
+    tier: 1
+    domain: "etoday.co.kr"
+  - name: "이투데이(시장)"
+    url: "https://rss.etoday.co.kr/eto/market_news.xml"
+    tier: 1
+    domain: "etoday.co.kr"
+  - name: "한국경제(경제)"
+    url: "https://www.hankyung.com/feed/economy"
+    tier: 1
+    domain: "hankyung.com"
+  - name: "한국경제(부동산)"
+    url: "https://www.hankyung.com/feed/realestate"
+    tier: 1
+    domain: "hankyung.com"
+  - name: "한국경제(IT)"
+    url: "https://www.hankyung.com/feed/it"
+    tier: 1
+    domain: "hankyung.com"
+  - name: "조선일보(경제)"
+    url: "https://www.chosun.com/arc/outboundfeeds/rss/category/economy/?outputType=xml"
+    tier: 1
+    domain: "chosun.com"
+  - name: "매일경제"
+    url: "https://www.mk.co.kr/rss/30000001/"
+    tier: 1
+    domain: "mk.co.kr"
+  - name: "파이낸셜뉴스(경제)"
+    url: "https://www.fnnews.com/rss/r20/fn_realnews_economy.xml"
+    tier: 1
+    domain: "fnnews.com"
+  - name: "비즈니스워치"
+    url: "https://news.bizwatch.co.kr/rss/"
+    tier: 1
+    domain: "bizwatch.co.kr"
+
+  # ─────────────────────────────────────────────────────────
+  # Tier 1 — 종합 일간지 (필터 후 사회·정치 노이즈 큼, 그래도 산업 기사 캐치)
+  # ─────────────────────────────────────────────────────────
+  - name: "연합뉴스(전체)"
+    url: "https://www.yna.co.kr/rss/news.xml"
+    tier: 1
+    domain: "yna.co.kr"
+  - name: "이투데이(전체)"
+    url: "https://rss.etoday.co.kr/eto/etoday_news_all.xml"
+    tier: 1
+    domain: "etoday.co.kr"
+  - name: "조선일보(사회)"
+    url: "https://www.chosun.com/arc/outboundfeeds/rss/category/national/?outputType=xml"
+    tier: 1
+    domain: "chosun.com"
+  - name: "SBS뉴스"
+    url: "https://news.sbs.co.kr/news/sitemapRSS.do"
+    tier: 1
+    domain: "sbs.co.kr"
+  - name: "동아일보"
+    url: "http://rss.donga.com/total.xml"
+    tier: 1
+    domain: "donga.com"
+  - name: "경향신문"
+    url: "https://www.khan.co.kr/rss/rssdata/total_news.xml"
+    tier: 1
+    domain: "khan.co.kr"
+  - name: "국민일보"
+    url: "https://www.kmib.co.kr/rss/data/kmibRssAll.xml"
+    tier: 1
+    domain: "kmib.co.kr"
+  - name: "한겨레"
+    url: "https://www.hani.co.kr/rss/"
+    tier: 1
+    domain: "hani.co.kr"
+  - name: "연합뉴스TV"
+    url: "https://www.yonhapnewstv.co.kr/browse/feed/"
+    tier: 1
+    domain: "yonhapnewstv.co.kr"
+  - name: "TV조선"
+    url: "https://news.tvchosun.com/site/data/rss/rss.xml"
+    tier: 1
+    domain: "tvchosun.com"
+
+  # ─────────────────────────────────────────────────────────
+  # Tier 1 — 산업 전문지 (2026-05-26 재검증, /rss/allArticle.xml 패턴 성공)
+  # ─────────────────────────────────────────────────────────
+  - name: "히트뉴스 (제약·바이오)"
+    url: "https://www.hitnews.co.kr/rss/allArticle.xml"
+    tier: 1
+    domain: "hitnews.co.kr"
+  - name: "식품음료신문 (식품·식음료)"
+    url: "https://www.thinkfood.co.kr/rss/allArticle.xml"
+    tier: 1
+    domain: "thinkfood.co.kr"
+
+  # ─────────────────────────────────────────────────────────
+  # Tier 1 — 산업 전문지 (2026-05-27 추가 검증, 차단 풀림)
+  # 이전 tier 2 차단 상태 → 다양한 URL 패턴 probe 로 살아있는 거 다시 확보.
+  # 반도체·디스플레이·전자
+  # ─────────────────────────────────────────────────────────
+  - name: "전자신문(경제)"
+    url: "https://rss.etnews.com/Section901.xml"
+    tier: 1
+    domain: "etnews.com"
+  - name: "전자신문(산업)"
+    url: "https://rss.etnews.com/Section902.xml"
+    tier: 1
+    domain: "etnews.com"
+  - name: "디일렉 (디스플레이·반도체)"
+    url: "https://www.thelec.kr/rss/allArticle.xml"
+    tier: 1
+    domain: "thelec.kr"
+  - name: "전자부품"
+    url: "https://www.epnc.co.kr/rss/allArticle.xml"
+    tier: 1
+    domain: "epnc.co.kr"
+  - name: "배터리인사이드"
+    url: "https://www.batteryinside.com/feed"
+    tier: 1
+    domain: "batteryinside.com"
+
+  # ─────────────────────────────────────────────────────────
+  # Tier 1 — 제약·바이오 전문지
+  # ─────────────────────────────────────────────────────────
+  - name: "팜뉴스"
+    url: "https://www.pharmnews.com/rss/allArticle.xml"
+    tier: 1
+    domain: "pharmnews.com"
+  - name: "의약뉴스"
+    url: "https://www.newsmp.com/rss/allArticle.xml"
+    tier: 1
+    domain: "newsmp.com"
+  - name: "메디소비자뉴스"
+    url: "https://www.medisobizanews.com/rss/allArticle.xml"
+    tier: 1
+    domain: "medisobizanews.com"
+
+  # ─────────────────────────────────────────────────────────
+  # Tier 1 — 식품·화장품·농수축산
+  # ─────────────────────────────────────────────────────────
+  - name: "식품외식경제"
+    url: "https://www.foodbank.co.kr/rss/allArticle.xml"
+    tier: 1
+    domain: "foodbank.co.kr"
+  - name: "농수축산신문"
+    url: "https://www.aflnews.co.kr/rss/allArticle.xml"
+    tier: 1
+    domain: "aflnews.co.kr"
+  - name: "장업신문 (화장품)"
+    url: "https://www.jangup.com/rss/allArticle.xml"
+    tier: 1
+    domain: "jangup.com"
+
+  # ─────────────────────────────────────────────────────────
+  # Tier 1 — 건설·에너지·전력
+  # ─────────────────────────────────────────────────────────
+  - name: "한국건설신문"
+    url: "https://www.conslove.co.kr/rss/allArticle.xml"
+    tier: 1
+    domain: "conslove.co.kr"
+  - name: "산업뉴스"
+    url: "https://www.industrynews.co.kr/rss/allArticle.xml"
+    tier: 1
+    domain: "industrynews.co.kr"
+  - name: "에너지데일리"
+    url: "https://www.energydaily.co.kr/rss/allArticle.xml"
+    tier: 1
+    domain: "energydaily.co.kr"
+  - name: "전기신문"
+    url: "https://www.electimes.com/rss/allArticle.xml"
+    tier: 1
+    domain: "electimes.com"
+  - name: "투데이에너지"
+    url: "https://www.todayenergy.kr/rss/allArticle.xml"
+    tier: 1
+    domain: "todayenergy.kr"
+
+  # ─────────────────────────────────────────────────────────
+  # Tier 1 — 종합 경제지 (추가)
+  # ─────────────────────────────────────────────────────────
+  - name: "아주경제(산업)"
+    url: "https://www.ajunews.com/rss/industry.xml"
+    tier: 1
+    domain: "ajunews.com"
+  - name: "아주경제(경제)"
+    url: "https://www.ajunews.com/rss/economy.xml"
+    tier: 1
+    domain: "ajunews.com"
+  - name: "머니투데이"
+    url: "https://rss.mt.co.kr/mt_news.xml"
+    tier: 1
+    domain: "mt.co.kr"
+  - name: "데일리한국"
+    url: "https://daily.hankooki.com/rss/allArticle.xml"
+    tier: 1
+    domain: "daily.hankooki.com"
+
+  # ─────────────────────────────────────────────────────────
+  # Tier 3 — 여전히 차단/다운 상태 (2026-05-27 재검증 후에도 실패)
+  # ─────────────────────────────────────────────────────────
+  # - name: "약업신문"       yakup.com         # HTTP 404 (모든 URL 패턴)
+  # - name: "데일리팜"       dailypharm.com    # HTTP 404
+  # - name: "반도체신문"     semicon.co.kr     # SSL 오류
+  # - name: "디스플레이데일리" displaydaily.co.kr # HTML 응답 (RSS 없음)
+  # - name: "코스모닝"       cosmorning.com    # HTML 응답 (RSS 없음)
+  # - name: "뷰티누리"       beautynury.com    # SSL 오류
+  # - name: "건설경제신문"   cnews.co.kr       # HTTP 404
+  # - name: "대한경제"       dnews.co.kr       # HTTP 404
+  # - name: "산업일보"       kidd.co.kr        # HTTP 404
+  # - name: "에너지경제"     ekn.kr            # HTTP 404
+  # - name: "헤럴드경제"     heraldcorp.com    # HTTP 404
+  # - name: "서울경제"       sedaily.com       # HTTP 404
+  # - name: "지디넷코리아"   zdnet.co.kr       # HTTP 404
+  # - name: "더벨"          thebell.co.kr     # HTML 응답
+  # - name: "건설기술인"     ceng.co.kr        # DNS 실패
+  # - name: "KCCA 한국클린룸설비협회" kooa.or.kr  # DNS/Connection 실패
+  # - name: "SEIA 반도체설비산업협회"  seia.or.kr  # DNS/Connection 실패
+  # ─────────────────────────────────────────────────────────

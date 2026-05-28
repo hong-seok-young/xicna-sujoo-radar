@@ -1,0 +1,60 @@
+# 사이트 크롤링 설정 (RSS 미지원 사이트)
+
+sites:
+  # ─── Tier 1: 공공 API (가장 신뢰도 높음) ───
+  - name: "DART 전자공시"
+    url: "https://dart.fss.or.kr"
+    tier: 1
+    type: "api"
+    api: "opendart"
+    notes: "OPENDART_API_KEY 필요. 투자공시·수주공시 검색."
+
+  - name: "KIND 기업공시"
+    url: "https://kind.krx.co.kr"
+    tier: 1
+    type: "api"
+    notes: "KRX 공시 검색"
+
+  - name: "나라장터(G2B)"
+    url: "https://g2b.go.kr"
+    tier: 1
+    type: "api"
+    api: "g2b"
+    notes: "공공데이터포털 입찰공고 API"
+
+  - name: "건축HUB"
+    url: "https://hub.go.kr"
+    tier: 1
+    type: "api"
+    api: "eais"
+    notes: "건축인허가 OpenAPI"
+
+  # ─── Tier 2: HTML 크롤링 (사이트별 어댑터 필요) ───
+  - name: "FactoryOn"
+    url: "https://factoryon.go.kr"
+    tier: 2
+    type: "html"
+    notes: "공장 입지 신청 현황"
+
+  - name: "산업단지공단"
+    url: "https://kicox.or.kr"
+    tier: 2
+    type: "html"
+
+  - name: "한국클린룸설비협회"
+    url: "https://kooa.or.kr"
+    tier: 2
+    type: "html"
+    notes: "CR 설비 발주 정보"
+
+  # ─── Tier 3: JS 렌더링 (Playwright) ───
+  - name: "조선비즈"
+    url: "https://biz.chosun.com"
+    tier: 3
+    type: "playwright"
+
+  - name: "키포스크"
+    url: "https://kipost.net"
+    tier: 3
+    type: "playwright"
+    notes: "일부 유료 → 제목·요약만"

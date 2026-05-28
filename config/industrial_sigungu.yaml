@@ -1,0 +1,110 @@
+# 자이씨앤에이 영업팀 관심 산업 시군구 화이트리스트
+# ──────────────────────────────────────────────────────
+# 이 시군구 안의 모든 동/읍/면이 EAIS 수집 대상.
+# 카테고리는 참고용 — 한 시군구가 여러 산업에 걸쳐 있어도 무관 (중복 제거됨).
+#
+# 주의: legal_dong.csv는 시군구 단위까지만 추적 (분당구·처인구 등 자치구 별도 X).
+#       즉 "용인시" 등록 시 자치구 4개 동 모두 포함됨.
+
+# ───── 반도체·디스플레이 (CR) ─────
+반도체_디스플레이:
+  - {sido: 경기도,         sigungu: 화성시}      # 삼성 P3·P4 단지
+  - {sido: 경기도,         sigungu: 평택시}      # 삼성 P5, LG디스플레이
+  - {sido: 경기도,         sigungu: 용인시}      # SK하이닉스 용인 클러스터 + 삼성 기흥
+  - {sido: 경기도,         sigungu: 이천시}      # SK하이닉스 본사·M16
+  - {sido: 경기도,         sigungu: 안성시}
+  - {sido: 경기도,         sigungu: 수원시}      # 삼성전자 본사
+  - {sido: 경기도,         sigungu: 오산시}
+  - {sido: 경기도,         sigungu: 파주시}      # LG디스플레이 파주
+  - {sido: 충청남도,       sigungu: 아산시}      # 삼성디스플레이 탕정
+  - {sido: 충청남도,       sigungu: 천안시}
+  - {sido: 경상북도,       sigungu: 구미시}      # 삼성·LG 구미
+
+# ───── 이차전지 ─────
+이차전지:
+  - {sido: 충청북도,       sigungu: 청주시}      # LG에너지솔루션 오창
+  - {sido: 충청북도,       sigungu: 음성군}
+  - {sido: 충청북도,       sigungu: 진천군}
+  - {sido: 충청남도,       sigungu: 서산시}      # LG화학 대산
+  - {sido: 충청남도,       sigungu: 당진시}
+  - {sido: 충청남도,       sigungu: 예산군}
+  - {sido: 경상북도,       sigungu: 포항시}      # 에코프로 양극재
+  - {sido: 경상북도,       sigungu: 김천시}
+  - {sido: 울산광역시,     sigungu: 울주군}      # SK온
+  - {sido: 전북특별자치도, sigungu: 군산시}      # 새만금
+  - {sido: 광주광역시,     sigungu: 광산구}
+
+# ───── 제약·바이오 GMP ─────
+제약_바이오:
+  - {sido: 인천광역시,     sigungu: 연수구}      # 송도 BT (셀트리온·삼성바이오)
+  - {sido: 충청북도,       sigungu: 청주시}      # 오송 바이오 (중복: 이차전지)
+  - {sido: 경기도,         sigungu: 시흥시}
+  - {sido: 경기도,         sigungu: 안산시}
+  - {sido: 강원특별자치도, sigungu: 원주시}      # 의료기기
+  - {sido: 강원특별자치도, sigungu: 춘천시}
+  - {sido: 대전광역시,     sigungu: 유성구}
+
+# ───── 일반 제조·산업단지 (자동차/조선/기계/철강/석유화학) ─────
+일반제조:
+  # 울산 (자동차/조선/석유화학)
+  - {sido: 울산광역시,     sigungu: 남구}
+  - {sido: 울산광역시,     sigungu: 동구}
+  - {sido: 울산광역시,     sigungu: 북구}
+  - {sido: 울산광역시,     sigungu: 중구}
+
+  # 경남 (기계/조선)
+  - {sido: 경상남도,       sigungu: 창원시}      # 진해·성산·의창·마산회원 통합
+  - {sido: 경상남도,       sigungu: 김해시}
+  - {sido: 경상남도,       sigungu: 양산시}
+  - {sido: 경상남도,       sigungu: 거제시}      # 한화오션
+  - {sido: 경상남도,       sigungu: 함안군}
+  - {sido: 경상남도,       sigungu: 밀양시}
+
+  # 부산
+  - {sido: 부산광역시,     sigungu: 강서구}      # 부산신호단지
+  - {sido: 부산광역시,     sigungu: 사상구}
+  - {sido: 부산광역시,     sigungu: 사하구}
+  - {sido: 부산광역시,     sigungu: 기장군}
+
+  # 경기 산업단지
+  - {sido: 경기도,         sigungu: 광주시}      # 곤지암
+  - {sido: 경기도,         sigungu: 여주시}
+  - {sido: 경기도,         sigungu: 김포시}
+  - {sido: 경기도,         sigungu: 포천시}
+
+  # 충남 (철강·석유화학)
+  - {sido: 충청남도,       sigungu: 보령시}
+  - {sido: 충청남도,       sigungu: 홍성군}
+  - {sido: 충청남도,       sigungu: 논산시}
+
+  # 전남 (철강·석유화학·조선)
+  - {sido: 전라남도,       sigungu: 광양시}      # POSCO
+  - {sido: 전라남도,       sigungu: 여수시}      # 석유화학
+  - {sido: 전라남도,       sigungu: 영암군}      # 조선
+
+  # 전북 (자동차)
+  - {sido: 전북특별자치도, sigungu: 익산시}
+  - {sido: 전북특별자치도, sigungu: 완주군}      # 현대차 전주공장
+  - {sido: 전북특별자치도, sigungu: 김제시}
+
+  # 경북 (자동차부품)
+  - {sido: 경상북도,       sigungu: 경산시}
+  - {sido: 경상북도,       sigungu: 영천시}
+  - {sido: 경상북도,       sigungu: 경주시}
+
+  # 대구 (자동차부품·섬유)
+  - {sido: 대구광역시,     sigungu: 달성군}
+  - {sido: 대구광역시,     sigungu: 달서구}
+
+# ───── 식품·음료 ─────
+식품:
+  - {sido: 전라남도,       sigungu: 나주시}
+  - {sido: 전라남도,       sigungu: 영광군}
+  - {sido: 강원특별자치도, sigungu: 횡성군}
+  - {sido: 강원특별자치도, sigungu: 평창군}
+
+# ───── R&D 클러스터 (도심·테크밸리) ─────
+연구개발:
+  - {sido: 경기도,         sigungu: 성남시}      # 판교 테크노밸리
+  - {sido: 서울특별시,     sigungu: 강남구}      # 강남 R&D 사옥
+  - {sido: 서울특별시,     sigungu: 서초구}

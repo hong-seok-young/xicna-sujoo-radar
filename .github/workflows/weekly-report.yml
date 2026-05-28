@@ -1,7 +1,5 @@
 name: Weekly report (자동발송)
 
-# 매주 금요일 08:30 KST = 목요일 23:30 UTC
-# workflow_dispatch 로 즉시 수동 실행 가능 (테스트용)
 on:
   schedule:
     # 본 운영: 매주 금요일 08:30 KST = 목 23:30 UTC
@@ -16,77 +14,77 @@ permissions:
 jobs:
   generate-and-publish:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 30
 
-      - name: Generate weekly HTML (현재는 placeholder, 실제 키 갱신 후 본 파이프라인 연결)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
         shell: bash
         run: |
-          set -uo pipefail
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          # 워크플로에서 별도 사용
+          pip install python-dotenv
+
+      - name: Run weekly pipeline (수집 + 필터 + HTML 리포트)
+        shell: bash
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          G2B_API_KEY:      ${{ secrets.DATA_GO_KR_KEY }}
+          EAIS_API_KEY:     ${{ secrets.DATA_GO_KR_KEY }}
+        run: |
+          # data/, logs 디렉터리 보장 (gitignored 라 fresh runner 엔 없음)
+          mkdir -p data/raw data/filtered data/cache data/logs
+          # 실제 파이프라인 실행 (HTML 자동 오픈 비활성)
+          python scripts/run_weekly.py --no-open
+
+      - name: Locate + verify report (품질 검증)
+        id: verify
+        shell: bash
+        run: |
+          REPORT=$(ls -t data/daily_report_*.html 2>/dev/null | head -1)
+          if [ -z "$REPORT" ]; then
+            echo "::error::리포트 파일을 못 찾음 (data/daily_report_*.html)"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$REPORT" 2>/dev/null || wc -c < "$REPORT")
+          echo "리포트 경로: $REPORT"
+          echo "크기: $SIZE bytes"
+
+          # 최소 크기 검증 (placeholder 가 아니라 진짜 리포트)
+          if [ "$SIZE" -lt 20000 ]; then
+            echo "::error::리포트가 너무 작음(${SIZE}B). 정상 크기는 100KB+ 이상"
+            exit 1
+          fi
+
+          # 핵심 섹션 포함 여부
+          for kw in "나라장터" "DART" "식약처" "뉴스"; do
+            if ! grep -q "$kw" "$REPORT"; then
+              echo "::warning::리포트에 '$kw' 섹션이 안 보임"
+            fi
+          done
+
+          # docs/ 로 복사 (Pages 갱신)
           mkdir -p docs
-          UTC=$(date -u +'%Y-%m-%d %H:%M:%S')
-          KST=$(TZ=Asia/Seoul date +'%Y-%m-%d %H:%M:%S')
-          RUN_URL="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          cp "$REPORT" docs/index.html
+          echo "→ docs/index.html 갱신 (${SIZE}B)"
 
-          cat > docs/index.html <<HTML
-          <!DOCTYPE html>
-          <html lang="ko">
-          <head>
-            <meta charset="utf-8">
-            <meta name="robots" content="noindex,nofollow,noarchive">
-            <meta name="viewport" content="width=device-width,initial-scale=1">
-            <title>수주레이더 — 자동 생성 테스트</title>
-            <style>
-              :root { color-scheme: light dark; }
-              body { font-family: -apple-system, BlinkMacSystemFont, "맑은 고딕", "Malgun Gothic", sans-serif;
-                     max-width: 680px; margin: 40px auto; padding: 0 20px; line-height: 1.65; color: #1f2328; }
-              h1 { color: #0969da; margin-bottom: 8px; }
-              .ok { color: #1a7f37; font-weight: 700; font-size: 1.05em; }
-              .meta { background: #f6f8fa; padding: 16px 22px; border-radius: 8px; border: 1px solid #d0d7de; }
-              code { background: #eee; padding: 2px 6px; border-radius: 3px; font-size: 0.92em; }
-              ul li { margin: 6px 0; }
-              footer { margin-top: 40px; font-size: 0.85em; color: #656d76; }
-              @media (prefers-color-scheme: dark) {
-                body { color: #e6edf3; background: #0d1117; }
-                .meta { background: #161b22; border-color: #30363d; }
-                code { background: #2d333b; }
-                footer { color: #8b949e; }
-              }
-            </style>
-          </head>
-          <body>
-            <h1>✅ 자동 생성 성공</h1>
-            <p class="ok">이 페이지는 GitHub Actions 클라우드 서버에서 자동 생성됐습니다 — 회원님 PC와 무관.</p>
+          # 다음 step 용으로 환경변수 export
+          echo "REPORT_PATH=$REPORT" >> $GITHUB_ENV
+          echo "REPORT_SIZE=$SIZE"   >> $GITHUB_ENV
+          echo "KST_DATE=$(TZ=Asia/Seoul date +'%Y-%m-%d %a')" >> $GITHUB_ENV
 
-            <div class="meta">
-              <p>📅 생성 시각 (UTC): <code>$UTC</code></p>
-              <p>📅 생성 시각 (KST): <code>$KST</code></p>
-              <p>⏰ 정기 실행: 매주 금요일 08:30 KST (workflow cron)</p>
-              <p>🔗 실행 로그: <a href="$RUN_URL">$GITHUB_RUN_ID</a></p>
-            </div>
-
-            <h2>의미</h2>
-            <ul>
-              <li>회원님 회사 PC가 꺼져 있어도 <b>매주 금요일 자동 갱신</b>됩니다.</li>
-              <li>이 URL을 북마크하시면 매주 새 리포트가 같은 자리에 떠요.</li>
-              <li>아직은 API 키 재발급 전이라 <b>placeholder</b>. 키 갱신되면 이 자리에 실제 리포트 (RSS·DART·EAIS·식약처·나라장터) 가 출력됩니다.</li>
-            </ul>
-
-            <footer>
-              noindex 메타로 검색엔진 색인 차단 — 링크 아는 사람만 접근 가능.<br>
-              자이씨앤에이 영업팀 수주정보 자동수집 시스템 · GitHub Actions 기반
-            </footer>
-          </body>
-          </html>
-          HTML
-
-          echo "=== 생성된 HTML 앞 30줄 ==="
-          head -30 docs/index.html
-
-          # KST 날짜를 다음 step 의 메일 제목에 쓰기 위해 GITHUB_ENV 로 전달
-          echo "KST_DATE=$(TZ=Asia/Seoul date +'%Y-%m-%d')" >> $GITHUB_ENV
-
-      - name: Send email to recipients
+      - name: Send email to recipients (리포트 본문 포함)
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -98,15 +96,15 @@ jobs:
           from: 수주레이더 봇 <${{ secrets.SMTP_USER }}>
           html_body: file://docs/index.html
 
-      - name: Commit & push if changed
+      - name: Commit & push docs (Pages 갱신)
         shell: bash
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/index.html
           if git diff --staged --quiet; then
-            echo "변경 없음 — commit 생략"
+            echo "변경 없음"
           else
-            git commit -m "auto: weekly report update — $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git commit -m "auto: weekly report — $(TZ=Asia/Seoul date +'%Y-%m-%d %H:%M KST')"
             git push
           fi

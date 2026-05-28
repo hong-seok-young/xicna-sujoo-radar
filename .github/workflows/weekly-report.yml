@@ -166,13 +166,15 @@ jobs:
           fi
           git commit -m "auto: weekly report ${{ env.KST_FILENAME }} (latest + archive)"
           # 워크플로 도는 중 origin 이 앞서갔을 수 있음 → rebase 후 푸시 (최대 3회 재시도)
+          # --autostash: 파이프라인이 수정한 다른 tracked file(예: config/industrial_dongs.csv)
+          #              때문에 rebase 가 막히지 않도록 자동 stash
           for i in 1 2 3; do
             if git push; then
               echo "  ✓ push 성공"
               exit 0
             fi
-            echo "  ! push 실패 ($i/3) — pull --rebase 후 재시도"
-            git pull --rebase origin main || true
+            echo "  ! push 실패 ($i/3) — pull --rebase --autostash 후 재시도"
+            git pull --rebase --autostash origin main || true
           done
           echo "::error::push 3회 재시도 후 실패"
           exit 1

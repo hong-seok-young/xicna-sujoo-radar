@@ -75,14 +75,40 @@ jobs:
           done
 
           # docs/ 로 복사 (Pages 갱신)
-          mkdir -p docs
+          mkdir -p docs/archive
           cp "$REPORT" docs/index.html
           echo "→ docs/index.html 갱신 (${SIZE}B)"
+
+          # docs/archive/YYYY-MM-DD.html 로도 영구 보존 (주차별 아카이브)
+          KST_FILENAME=$(TZ=Asia/Seoul date +'%Y-%m-%d')
+          cp "$REPORT" "docs/archive/$KST_FILENAME.html"
+          echo "→ docs/archive/$KST_FILENAME.html 보존"
+
+          # 아카이브 인덱스 페이지 자동 생성 (최신순 정렬)
+          {
+            echo '<!DOCTYPE html>'
+            echo '<html lang="ko"><head><meta charset="utf-8">'
+            echo '<meta name="robots" content="noindex,nofollow,noarchive">'
+            echo '<title>수주레이더 — 아카이브</title>'
+            echo '<style>body{font-family:-apple-system,"맑은 고딕",sans-serif;max-width:600px;margin:40px auto;padding:0 20px;line-height:1.7}h1{color:#0969da}ul{list-style:none;padding:0}li{padding:8px 0;border-bottom:1px solid #eee}a{color:#0969da;text-decoration:none;font-size:1.05em}a:hover{text-decoration:underline}.back{margin-top:30px;font-size:.9em;color:#666}</style>'
+            echo '</head><body>'
+            echo '<h1>📂 주차별 리포트 아카이브</h1>'
+            echo '<ul>'
+            for f in $(ls -1 docs/archive/*.html 2>/dev/null | grep -v '/index.html$' | sort -r); do
+              bn=$(basename "$f" .html)
+              echo "  <li><a href=\"$bn.html\">📅 $bn</a></li>"
+            done
+            echo '</ul>'
+            echo '<p class="back"><a href="../">← 최신 리포트로</a></p>'
+            echo '</body></html>'
+          } > docs/archive/index.html
+          echo "→ docs/archive/index.html (아카이브 목록) 갱신"
 
           # 다음 step 용으로 환경변수 export
           echo "REPORT_PATH=$REPORT" >> $GITHUB_ENV
           echo "REPORT_SIZE=$SIZE"   >> $GITHUB_ENV
           echo "KST_DATE=$(TZ=Asia/Seoul date +'%Y-%m-%d %a')" >> $GITHUB_ENV
+          echo "KST_FILENAME=$KST_FILENAME" >> $GITHUB_ENV
 
       - name: 첨부용 HTML 파일 준비 (날짜 포함 파일명)
         shell: bash
@@ -106,15 +132,15 @@ jobs:
           html_body: file://docs/index.html
           attachments: ${{ env.ATT_PATH }}
 
-      - name: Commit & push docs (Pages 갱신)
+      - name: Commit & push docs + archive (Pages 갱신)
         shell: bash
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/index.html
+          git add docs/index.html docs/archive/
           if git diff --staged --quiet; then
             echo "변경 없음"
           else
-            git commit -m "auto: weekly report — $(TZ=Asia/Seoul date +'%Y-%m-%d %H:%M KST')"
+            git commit -m "auto: weekly report ${{ env.KST_FILENAME }} (latest + archive)"
             git push
           fi

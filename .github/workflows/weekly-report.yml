@@ -126,7 +126,7 @@ jobs:
           echo "ATT_PATH=data/$ATT_NAME" >> $GITHUB_ENV
           echo "  첨부 파일: $ATT_NAME ($(stat -c%s "data/$ATT_NAME") bytes)"
 
-      - name: Send email to recipients (본문 + 첨부 파일)
+      - name: Send email — 짧은 안내 + 첨부파일 (본문 인라인 X)
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -136,7 +136,23 @@ jobs:
           subject: "[수주레이더] ${{ env.KST_DATE }} 주간 리포트"
           to: ${{ secrets.REPORT_RECIPIENTS }}
           from: 수주레이더 봇 <${{ secrets.SMTP_USER }}>
-          html_body: file://docs/index.html
+          html_body: |
+            <div style="font-family:-apple-system,'맑은 고딕','Malgun Gothic',sans-serif;max-width:560px;padding:20px;color:#222;line-height:1.6">
+              <h2 style="color:#0969da;margin-top:0">📊 수주레이더 ${{ env.KST_DATE }}</h2>
+              <p>이번 주 수주레이더 리포트가 도착했습니다.</p>
+              <div style="background:#f0f7ff;padding:14px 18px;border-left:4px solid #0969da;border-radius:4px;margin:18px 0">
+                📎 <b>첨부된 HTML 파일을 클릭</b>하여 브라우저에서 열어보세요.<br>
+                <span style="color:#555;font-size:.9em">메일 본문 인라인 렌더링은 일부 깨지므로, <b>첨부파일이 정식 버전</b>입니다. 더블클릭하면 즐겨찾기·필터·기간선택 등 모든 인터랙티브 기능이 작동합니다.</span>
+              </div>
+              <p style="margin-bottom:6px"><b>또는 웹으로 보기 (북마크 추천):</b></p>
+              <ul style="padding-left:20px">
+                <li><a href="https://hong-seok-young.github.io/xicna-sujoo-radar/" style="color:#0969da">📊 최신 리포트 (항상 이번 주)</a></li>
+                <li><a href="https://hong-seok-young.github.io/xicna-sujoo-radar/archive/${{ env.KST_FILENAME }}.html" style="color:#0969da">📅 이번 주 영구 링크 (${{ env.KST_FILENAME }})</a></li>
+                <li><a href="https://hong-seok-young.github.io/xicna-sujoo-radar/archive/" style="color:#0969da">📂 전체 주차 아카이브</a></li>
+              </ul>
+              <hr style="border:none;border-top:1px solid #e0e0e0;margin:24px 0">
+              <p style="color:#888;font-size:.85em;margin:0">자동 발송 · 매주 금요일 08:30 KST · 자이씨앤에이 영업팀 · GitHub Actions</p>
+            </div>
           attachments: ${{ env.ATT_PATH }}
 
       - name: Commit & push docs + archive (Pages 갱신)

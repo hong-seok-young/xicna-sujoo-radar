@@ -14,7 +14,7 @@ permissions:
 jobs:
   generate-and-publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -26,6 +26,14 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      - name: Restore data/cache (EAIS, DART body, MFDS prev-snapshot)
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: data-cache-${{ github.run_number }}
+          restore-keys: |
+            data-cache-
+
       - name: Install dependencies
         shell: bash
         run: |
@@ -33,7 +41,6 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
-          # 워크플로에서 별도 사용
           pip install python-dotenv
 
       - name: Run weekly pipeline (수집 + 필터 + HTML 리포트)
@@ -43,10 +50,10 @@ jobs:
           G2B_API_KEY:      ${{ secrets.DATA_GO_KR_KEY }}
           EAIS_API_KEY:     ${{ secrets.DATA_GO_KR_KEY }}
         run: |
-          # data/, logs 디렉터리 보장 (gitignored 라 fresh runner 엔 없음)
           mkdir -p data/raw data/filtered data/cache data/logs
-          # 실제 파이프라인 실행 (HTML 자동 오픈 비활성)
-          python scripts/run_weekly.py --no-open
+          # 첫 클라우드 실행은 EAIS 캐시가 없어 매우 느림(22분+) → 임시로 EAIS 스킵
+          # 다음 단계: 캐시 채워지면 EAIS 재활성화
+          python scripts/run_weekly.py --no-open --skip eais
 
       - name: Locate + verify report (품질 검증)
         id: verify

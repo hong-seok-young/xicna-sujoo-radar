@@ -161,8 +161,18 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/index.html docs/archive/
           if git diff --staged --quiet; then
-            echo "변경 없음"
-          else
-            git commit -m "auto: weekly report ${{ env.KST_FILENAME }} (latest + archive)"
-            git push
+            echo "변경 없음 — commit 생략"
+            exit 0
           fi
+          git commit -m "auto: weekly report ${{ env.KST_FILENAME }} (latest + archive)"
+          # 워크플로 도는 중 origin 이 앞서갔을 수 있음 → rebase 후 푸시 (최대 3회 재시도)
+          for i in 1 2 3; do
+            if git push; then
+              echo "  ✓ push 성공"
+              exit 0
+            fi
+            echo "  ! push 실패 ($i/3) — pull --rebase 후 재시도"
+            git pull --rebase origin main || true
+          done
+          echo "::error::push 3회 재시도 후 실패"
+          exit 1

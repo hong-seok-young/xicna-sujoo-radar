@@ -25,9 +25,17 @@ jobs:
 
       - name: Probe Korean endpoints
         shell: bash
+        env:
+          OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+          DATA_GO_KR_KEY:   ${{ secrets.DATA_GO_KR_KEY }}
         run: |
           set -uo pipefail
           out=geoip_result.md
+
+          KEY_MODE="dummy"
+          if [ -n "${OPENDART_API_KEY:-}" ] && [ -n "${DATA_GO_KR_KEY:-}" ]; then
+            KEY_MODE="real"
+          fi
 
           {
             echo "# GeoIP Probe Report"
@@ -40,12 +48,17 @@ jobs:
             echo "| Runner country (ipinfo) | \`$(curl -s --max-time 10 ipinfo.io/country || echo unknown)\` |"
             echo "| Runner OS | \`$RUNNER_OS / $RUNNER_ARCH\` |"
             echo "| 실행 시각 (UTC) | \`$(date -u +'%Y-%m-%d %H:%M:%S')\` |"
+            echo "| **API 키 모드** | **\`${KEY_MODE}\`** (real = secrets 사용 / dummy = TEST) |"
             echo ""
             echo "---"
             echo ""
-            echo "## 1. 한국 정부 API (dummy key 로 도달성 테스트)"
+            echo "## 1. 한국 정부 API"
             echo ""
-            echo "> **판독법**: \`SERVICE_KEY\` / \`status\` / \`errMsg\` 등 구조화된 에러 응답이 오면 **API 자체는 도달함**(=인증만 실패한 것). 반면 TIMEOUT, connection refused, 403 with empty body 는 **차단 가능성**."
+            if [ "$KEY_MODE" = "real" ]; then
+              echo "> **실제 키 사용** — HTTP 200 + 본문에 데이터 키가 보이면 ✅ 정상."
+            else
+              echo "> **dummy key 사용** — \`SERVICE_KEY\` / \`status\` / \`errMsg\` 등 구조화된 에러 응답이 오면 API 자체는 도달함."
+            fi
             echo ""
           } > "$out"
 
@@ -88,17 +101,20 @@ jobs:
             } >> "$out"
           }
 
+          DART_KEY="${OPENDART_API_KEY:-TEST}"
+          DGK_KEY="${DATA_GO_KR_KEY:-TEST}"
+
           probe_gov "DART (opendart.fss.or.kr)" \
-            "https://opendart.fss.or.kr/api/list.json?crtfc_key=TEST&bgn_de=20260521&end_de=20260528&page_count=1"
+            "https://opendart.fss.or.kr/api/list.json?crtfc_key=${DART_KEY}&bgn_de=20260521&end_de=20260528&page_count=1"
 
           probe_gov "EAIS / 세움터 건축HUB (apis.data.go.kr/1613000)" \
-            "https://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo?serviceKey=TEST&sigunguCd=11000&bjdongCd=10300&numOfRows=1&_type=json"
+            "https://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo?serviceKey=${DGK_KEY}&sigunguCd=11000&bjdongCd=10300&numOfRows=1&_type=json"
 
           probe_gov "MFDS / 식약처 GMP (apis.data.go.kr/1471000)" \
-            "https://apis.data.go.kr/1471000/DrugGmpStbltJgmtIssuStusService/getDrugGmpStbltJgmtIssuStusInq?serviceKey=TEST&numOfRows=1&pageNo=1&type=json"
+            "https://apis.data.go.kr/1471000/DrugGmpStbltJgmtIssuStusService/getDrugGmpStbltJgmtIssuStusInq?serviceKey=${DGK_KEY}&numOfRows=1&pageNo=1&type=json"
 
           probe_gov "나라장터 G2B (apis.data.go.kr/1230000)" \
-            "http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk?serviceKey=TEST&pageNo=1&numOfRows=1&inqryDiv=1&type=json"
+            "http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoCnstwk?serviceKey=${DGK_KEY}&pageNo=1&numOfRows=1&inqryDiv=1&type=json"
 
           {
             echo "---"

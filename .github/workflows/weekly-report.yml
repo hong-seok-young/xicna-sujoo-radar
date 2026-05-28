@@ -80,6 +80,21 @@ jobs:
           echo "=== 생성된 HTML 앞 30줄 ==="
           head -30 docs/index.html
 
+          # KST 날짜를 다음 step 의 메일 제목에 쓰기 위해 GITHUB_ENV 로 전달
+          echo "KST_DATE=$(TZ=Asia/Seoul date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Send email to recipients
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: "[수주레이더] ${{ env.KST_DATE }} 주간 리포트"
+          to: ${{ secrets.REPORT_RECIPIENTS }}
+          from: 수주레이더 봇 <${{ secrets.SMTP_USER }}>
+          html_body: file://docs/index.html
+
       - name: Commit & push if changed
         shell: bash
         run: |

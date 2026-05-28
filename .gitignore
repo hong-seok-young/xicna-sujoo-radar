@@ -19,6 +19,10 @@ __pycache__/
 
 # 데이터 (개인정보·매체 컨텐츠 포함 가능)
 data/
+# 예외: 매출 매칭 DB는 식약처 카드 필터에 필수 → repo 포함
+!data/cache/
+data/cache/*
+!data/cache/pharma_revenue.json
 
 # OS
 .DS_Store

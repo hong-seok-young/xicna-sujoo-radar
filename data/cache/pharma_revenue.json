@@ -1,0 +1,414 @@
+{
+  "generated_at": "2026-05-26T10:17:36.340132",
+  "year": 2024,
+  "threshold_won": 300000000000,
+  "count": 58,
+  "companies": {
+    "삼성바이오로직스": {
+      "corp_code": "00877059",
+      "stock_code": "207940",
+      "revenue": 4547322176421,
+      "year": 2024,
+      "reason": "매출 45,473억"
+    },
+    "셀트리온": {
+      "corp_code": "00413046",
+      "stock_code": "068270",
+      "revenue": 3557303554371,
+      "year": 2024,
+      "reason": "매출 35,573억"
+    },
+    "한국콜마": {
+      "corp_code": "00939331",
+      "stock_code": "161890",
+      "revenue": 2452063980463,
+      "year": 2024,
+      "reason": "매출 24,520억"
+    },
+    "녹십자홀딩스": {
+      "corp_code": "00108135",
+      "stock_code": "005250",
+      "revenue": 2204855223217,
+      "year": 2024,
+      "reason": "매출 22,048억"
+    },
+    "코스맥스": {
+      "corp_code": "01009789",
+      "stock_code": "192820",
+      "revenue": 2166089636742,
+      "year": 2024,
+      "reason": "매출 21,660억"
+    },
+    "유한양행": {
+      "corp_code": "00145109",
+      "stock_code": "000100",
+      "revenue": 2067791451854,
+      "year": 2024,
+      "reason": "매출 20,677억"
+    },
+    "대웅": {
+      "corp_code": "00111810",
+      "stock_code": "003090",
+      "revenue": 1936916852599,
+      "year": 2024,
+      "reason": "매출 19,369억"
+    },
+    "녹십자": {
+      "corp_code": "00129679",
+      "stock_code": "006280",
+      "revenue": 1679891941477,
+      "year": 2024,
+      "reason": "매출 16,798억"
+    },
+    "광동제약": {
+      "corp_code": "00103592",
+      "stock_code": "009290",
+      "revenue": 1640718849226,
+      "year": 2024,
+      "reason": "매출 16,407억"
+    },
+    "종근당": {
+      "corp_code": "00992871",
+      "stock_code": "185750",
+      "revenue": 1586430795630,
+      "year": 2024,
+      "reason": "매출 15,864억"
+    },
+    "한미약품": {
+      "corp_code": "00828497",
+      "stock_code": "128940",
+      "revenue": 1495501575568,
+      "year": 2024,
+      "reason": "매출 14,955억"
+    },
+    "대웅제약": {
+      "corp_code": "00427483",
+      "stock_code": "069620",
+      "revenue": 1422683296380,
+      "year": 2024,
+      "reason": "매출 14,226억"
+    },
+    "동아쏘시오홀딩스": {
+      "corp_code": "00116824",
+      "stock_code": "000640",
+      "revenue": 1333229636666,
+      "year": 2024,
+      "reason": "매출 13,332억"
+    },
+    "한미사이언스": {
+      "corp_code": "00161426",
+      "stock_code": "008930",
+      "revenue": 1283432295647,
+      "year": 2024,
+      "reason": "매출 12,834억"
+    },
+    "우리바이오": {
+      "corp_code": "00369107",
+      "stock_code": "082850",
+      "revenue": 1237198398100,
+      "year": 2024,
+      "reason": "매출 12,371억"
+    },
+    "차바이오텍": {
+      "corp_code": "00525679",
+      "stock_code": "085660",
+      "revenue": 1045049021124,
+      "year": 2024,
+      "reason": "매출 10,450억"
+    },
+    "보령": {
+      "corp_code": "00123143",
+      "stock_code": "003850",
+      "revenue": 1017106670442,
+      "year": 2024,
+      "reason": "매출 10,171억"
+    },
+    "종근당홀딩스": {
+      "corp_code": "00149354",
+      "stock_code": "001630",
+      "revenue": 957752613068,
+      "year": 2024,
+      "reason": "매출 9,577억"
+    },
+    "HK이노엔": {
+      "corp_code": "01012066",
+      "stock_code": "195940",
+      "revenue": 897141915178,
+      "year": 2024,
+      "reason": "매출 8,971억"
+    },
+    "휴온스글로벌": {
+      "corp_code": "00228059",
+      "stock_code": "084110",
+      "revenue": 813460515145,
+      "year": 2024,
+      "reason": "매출 8,134억"
+    },
+    "동국제약": {
+      "corp_code": "00114808",
+      "stock_code": "086450",
+      "revenue": 812166073057,
+      "year": 2024,
+      "reason": "매출 8,121억"
+    },
+    "JW중외제약": {
+      "corp_code": "00149947",
+      "stock_code": "001060",
+      "revenue": 719375756340,
+      "year": 2024,
+      "reason": "매출 7,193억"
+    },
+    "제일약품": {
+      "corp_code": "01236897",
+      "stock_code": "271980",
+      "revenue": 704542027302,
+      "year": 2024,
+      "reason": "매출 7,045억"
+    },
+    "서울바이오시스": {
+      "corp_code": "00488402",
+      "stock_code": "092190",
+      "revenue": 699232725004,
+      "year": 2024,
+      "reason": "매출 6,992억"
+    },
+    "동아에스티": {
+      "corp_code": "00956930",
+      "stock_code": "170900",
+      "revenue": 697869071451,
+      "year": 2024,
+      "reason": "매출 6,978억"
+    },
+    "에스디바이오센서": {
+      "corp_code": "00854997",
+      "stock_code": "137310",
+      "revenue": 694573795269,
+      "year": 2024,
+      "reason": "매출 6,945억"
+    },
+    "콜마홀딩스": {
+      "corp_code": "00203290",
+      "stock_code": "024720",
+      "revenue": 676663181663,
+      "year": 2024,
+      "reason": "매출 6,766억"
+    },
+    "일동홀딩스": {
+      "corp_code": "00146083",
+      "stock_code": "000230",
+      "revenue": 657566885958,
+      "year": 2024,
+      "reason": "매출 6,575억"
+    },
+    "콜마비앤에이치": {
+      "corp_code": "01032404",
+      "stock_code": "200130",
+      "revenue": 615642004817,
+      "year": 2024,
+      "reason": "매출 6,156억"
+    },
+    "일동제약": {
+      "corp_code": "01168383",
+      "stock_code": "249420",
+      "revenue": 614940882569,
+      "year": 2024,
+      "reason": "매출 6,149억"
+    },
+    "대원제약": {
+      "corp_code": "00111999",
+      "stock_code": "003220",
+      "revenue": 598162352613,
+      "year": 2024,
+      "reason": "매출 5,981억"
+    },
+    "코스맥스비티아이": {
+      "corp_code": "00219574",
+      "stock_code": "044820",
+      "revenue": 597630263412,
+      "year": 2024,
+      "reason": "매출 5,976억"
+    },
+    "휴온스": {
+      "corp_code": "01159853",
+      "stock_code": "243070",
+      "revenue": 590231059719,
+      "year": 2024,
+      "reason": "매출 5,902억"
+    },
+    "에스케이바이오팜": {
+      "corp_code": "00878696",
+      "stock_code": "326030",
+      "revenue": 547596283214,
+      "year": 2024,
+      "reason": "매출 5,475억"
+    },
+    "한독": {
+      "corp_code": "00161046",
+      "stock_code": "002390",
+      "revenue": 507358329302,
+      "year": 2024,
+      "reason": "매출 5,073억"
+    },
+    "바이오스마트": {
+      "corp_code": "00240857",
+      "stock_code": "038460",
+      "revenue": 484309653002,
+      "year": 2024,
+      "reason": "매출 4,843억"
+    },
+    "셀트리온제약": {
+      "corp_code": "00541349",
+      "stock_code": "068760",
+      "revenue": 477835307770,
+      "year": 2024,
+      "reason": "매출 4,778억"
+    },
+    "동화약품": {
+      "corp_code": "00119195",
+      "stock_code": "000020",
+      "revenue": 464874735245,
+      "year": 2024,
+      "reason": "매출 4,648억"
+    },
+    "씨젠": {
+      "corp_code": "00788773",
+      "stock_code": "096530",
+      "revenue": 414251733221,
+      "year": 2024,
+      "reason": "매출 4,142억"
+    },
+    "휴젤": {
+      "corp_code": "00888347",
+      "stock_code": "145020",
+      "revenue": 373046885998,
+      "year": 2024,
+      "reason": "매출 3,730억"
+    },
+    "코스맥스엔비티": {
+      "corp_code": "00656289",
+      "stock_code": "222040",
+      "revenue": 317985309667,
+      "year": 2024,
+      "reason": "매출 3,179억"
+    },
+    "삼진제약": {
+      "corp_code": "00128412",
+      "stock_code": "005500",
+      "revenue": 308349934442,
+      "year": 2024,
+      "reason": "매출 3,083억"
+    },
+    "에스티팜": {
+      "corp_code": "00871833",
+      "stock_code": "237690",
+      "revenue": 273751342840,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (매출 2,737억)"
+    },
+    "SK바이오사이언스": {
+      "corp_code": "01319899",
+      "stock_code": "302440",
+      "revenue": 267545049154,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (매출 2,675억)"
+    },
+    "메디톡스": {
+      "corp_code": "00580199",
+      "stock_code": "086900",
+      "revenue": 228621969000,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (매출 2,286억)"
+    },
+    "리가켐바이오": {
+      "corp_code": "00842619",
+      "stock_code": "141080",
+      "revenue": 125898140997,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (매출 1,258억)"
+    },
+    "알테오젠": {
+      "corp_code": "00989619",
+      "stock_code": "196170",
+      "revenue": 102854620800,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (매출 1,028억)"
+    },
+    "메디포스트": {
+      "corp_code": "00453929",
+      "stock_code": "078160",
+      "revenue": 70657028379,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (매출 706억)"
+    },
+    "에이프로젠바이오로직스": {
+      "corp_code": "00101044",
+      "stock_code": "003060",
+      "revenue": 67378141310,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (매출 673억)"
+    },
+    "지놈앤컴퍼니": {
+      "corp_code": "01276026",
+      "stock_code": "314130",
+      "revenue": 27744683042,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (매출 277억)"
+    },
+    "프레스티지바이오로직스": {
+      "corp_code": "01258428",
+      "stock_code": "334970",
+      "revenue": 2169042470,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (매출 21억)"
+    },
+    "SK바이오팜": {
+      "corp_code": "",
+      "stock_code": "",
+      "revenue": 0,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (DART fetch 실패)"
+    },
+    "셀트리온헬스케어": {
+      "corp_code": "",
+      "stock_code": "",
+      "revenue": 0,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (DART fetch 실패)"
+    },
+    "롯데바이오로직스": {
+      "corp_code": "",
+      "stock_code": "",
+      "revenue": 0,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (DART fetch 실패)"
+    },
+    "바이넥스": {
+      "corp_code": "",
+      "stock_code": "",
+      "revenue": 0,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (DART fetch 실패)"
+    },
+    "큐로셀": {
+      "corp_code": "",
+      "stock_code": "",
+      "revenue": 0,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (DART fetch 실패)"
+    },
+    "보로노이": {
+      "corp_code": "",
+      "stock_code": "",
+      "revenue": 0,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (DART fetch 실패)"
+    },
+    "코스맥스파마": {
+      "corp_code": "",
+      "stock_code": "",
+      "revenue": 0,
+      "year": 2024,
+      "reason": "CDMO/바이오 bypass (DART fetch 실패)"
+    }
+  }
+}

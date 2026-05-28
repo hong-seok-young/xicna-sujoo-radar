@@ -84,7 +84,16 @@ jobs:
           echo "REPORT_SIZE=$SIZE"   >> $GITHUB_ENV
           echo "KST_DATE=$(TZ=Asia/Seoul date +'%Y-%m-%d %a')" >> $GITHUB_ENV
 
-      - name: Send email to recipients (리포트 본문 포함)
+      - name: 첨부용 HTML 파일 준비 (날짜 포함 파일명)
+        shell: bash
+        run: |
+          # docs/index.html 을 더 식별 가능한 이름으로 복사하여 첨부
+          ATT_NAME="수주레이더_$(TZ=Asia/Seoul date +'%Y-%m-%d').html"
+          cp docs/index.html "data/$ATT_NAME"
+          echo "ATT_PATH=data/$ATT_NAME" >> $GITHUB_ENV
+          echo "  첨부 파일: $ATT_NAME ($(stat -c%s "data/$ATT_NAME") bytes)"
+
+      - name: Send email to recipients (본문 + 첨부 파일)
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -95,6 +104,7 @@ jobs:
           to: ${{ secrets.REPORT_RECIPIENTS }}
           from: 수주레이더 봇 <${{ secrets.SMTP_USER }}>
           html_body: file://docs/index.html
+          attachments: ${{ env.ATT_PATH }}
 
       - name: Commit & push docs (Pages 갱신)
         shell: bash

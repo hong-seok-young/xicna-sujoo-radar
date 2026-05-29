@@ -6,10 +6,10 @@
 
 ## ✅ 완료
 
-- **클라우드 자동화**: GitHub Actions cron (매주 금 08:30 KST 예정)
+- **클라우드 자동화**: GitHub Actions cron — **매일 07:00 KST** (2026-05-29 이후, 이전 weekly Fri 08:30 에서 daily 로 전환)
 - **이메일 발송**: Gmail SMTP, 본문 짧은 안내 + HTML 파일 첨부
 - **공개 웹페이지**: GitHub Pages https://hong-seok-young.github.io/xicna-sujoo-radar/
-- **주차별 아카이브**: `docs/archive/YYYY-MM-DD.html` 영구 보존
+- **일자별 아카이브**: `docs/archive/YYYY-MM-DD.html` 영구 보존
 - **개인 즐겨찾기 (별)**: localStorage 기반 (브라우저별 개별)
 - **노이즈 필터 보강**: 솔루션·온열질환·산업안전보건법 등 (false negative 검증 거침)
 - **데이터 캐시 보존**: `actions/cache@v4` (EAIS sweep 1회 후 빠름)
@@ -90,9 +90,8 @@
 
 ### 4. 보안·운영 정리
 - **API 키 재발급** (OpenDART, 공공데이터포털) — 이전 유출분 무효화
-- **테스트 cron 제거** — `'23 5 28 5 *'` (2026-05-28 일회용, 이제 안 발사됨)
-- **cron 시각 조정** — 운영 진입 시 `'30 23 * * 4'` (08:30 KST) → `'0 23 * * 4'` (08:00 KST) 로 당기기 (파이프라인 시간 + GitHub 지연 보정)
-- **EAIS 결과 강화** — 매주 0건 → quota·threshold 조정 검토
+- **테스트 cron 제거** — `'23 5 28 5 *'` (2026-05-28 일회용, 이제 안 발사됨) ✅ 이미 제거됨 (cron daily 로 전환)
+- **EAIS 결과 강화** — 이전 매주 0건 (현재 매일 발사로 전환 — 일주일 운영 후 재평가)
 - **Node.js 20 deprecated 경고 대응** (2026-05-29 첫 감지) — GitHub Actions 가 Node 20 → Node 24 전환 중. 영향 액션:
   - `actions/cache@v4`, `actions/checkout@v4`, `actions/setup-python@v5` (공식 — 메인테이너가 자동 업데이트)
   - `dawidd6/action-send-mail@v3` (서드파티 — 직접 업데이트 늦을 수 있음)

@@ -1944,7 +1944,7 @@ def render_mfds_company_row(company_items: list[dict], idx: int, today_d=None) -
                     break
             except ValueError:
                 pass
-    new_badge = ('<span class="badge" style="background:var(--accent-good);color:var(--bg);font-weight:700;">🆕 NEW (이번 주 신규)</span>'
+    new_badge = ('<span class="badge" style="background:var(--accent-good);color:var(--bg);font-weight:700;">🆕 NEW (7일 이내 신규)</span>'
                  if group_has_new else "")
     # 회사 단위 링크 — 한 번만 (rowspan 첫 행에)
     naver_url = f"https://search.naver.com/search.naver?query={quote(bssh_raw + ' GMP 공장 증설')}"

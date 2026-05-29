@@ -84,8 +84,12 @@ TARGET_PURPOSE_KEYWORDS = [
 ]
 
 DEFAULT_QUOTA = 900            # 일일 1,000 API 한도 - 100 안전 마진
-DEFAULT_REFRESH_ACTIVE_DAYS = 7   # 활성 동 재조회 주기
-DEFAULT_REFRESH_EMPTY_DAYS = 30   # 빈 동 재조회 주기
+# 활성 동 재조회 주기 — 매일 발사 전제. lookback window(7일) 보다 작아야 인허가 누락 없음.
+# 활성 동 ~1,500 / 3일 = ~500 API/일. quota 900 의 57% (안전 마진 큼).
+DEFAULT_REFRESH_ACTIVE_DAYS = 3
+# 빈 동 재조회 주기 — 새 산업지 진입 latency. 빈 동 ~280 / 14일 = ~20 API/일.
+# (이전 30일이었으나 매일 발사로 전환하며 단축)
+DEFAULT_REFRESH_EMPTY_DAYS = 14
 
 # ── 데이터 정합성 가드 ──
 # 단일 인허가 연면적 100만㎡ 초과는 단위 오류·산단 합산 오류로 추정 → 컷

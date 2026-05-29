@@ -98,6 +98,15 @@
   - `dawidd6/action-send-mail@v3` (서드파티 — 직접 업데이트 늦을 수 있음)
   - **예상 강제 cutoff**: 2026년 하반기~2027년 초 (GitHub 패턴상 deprecation 공지 후 6~12개월). 그 전엔 warning만 뜨고 정상 동작.
   - **대응**: cutoff 임박 시 `@v4` → `@v5` 식으로 한 줄씩 업데이트. 또는 워크플로 실패 시점에 대응 (메일 안 오면 알 수 있음).
+- **외부 watchdog — 무발송 감지** (안전망 2단계, 2026-05-29 메모)
+  - **현재 안전망 (1단계, commit `21d38e6`)**: 워크플로가 **시작은 했지만 실패**하면 abcde@xicna.com 으로 🚨 알림 자동 발송. 90% 시나리오 커버.
+  - **놓치는 시나리오**: 워크플로 트리거 자체가 안 됨 (GitHub Actions 장애, cron disabled, 워크플로 파일 깨짐, 60일 push 없어 schedule 자동 정지 등) → 알림조차 못 옴 = 조용한 실패.
+  - **해법 옵션**:
+    - **A. cron-job.org** (무료, 5분) — 매일 09:00 KST 에 본 워크플로 마지막 run 시각을 GitHub API 로 체크 → 24시간 안에 run 없으면 운영자에게 알림 메일/슬랙
+    - **B. UptimeRobot / Healthchecks.io** (무료, 10분) — 워크플로 마지막 step 이 ping 보내는 방식. ping 끊기면 알림
+    - **C. 별도 GitHub Actions 워크플로** (의미 약함 — GitHub 자체 장애엔 똑같이 안 동작)
+  - **추천**: A (cron-job.org) — 외부 인프라라 GitHub 장애에도 살아있음
+  - **언제 추가?**: 1단계 안전망 1~2개월 운영 후 진짜 필요한지 보고 결정. 지금은 오버킬일 수도.
 
 ---
 

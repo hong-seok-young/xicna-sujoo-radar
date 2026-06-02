@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from src.common.schema import Article
-from src.stage1_filter.filter import evaluate
+from src.stage1_filter.filter import evaluate, _find_areas, apply_filter
 
 
 def _make(title: str, content: str = "") -> Article:
@@ -83,3 +83,42 @@ def test_passes_battery():
     a = _make("LG엔솔 폴란드 기가팩토리 증설", "2조원 투자")
     r = evaluate(a)
     assert r.passed is True
+
+
+# ── 면적 추출: 한글 '만' 단위 혼합 표기 정규화 (2026-06-02 버그픽스) ──
+
+def test_area_myriad_mixed():
+    """'4만1764㎡' → '41,764㎡' (만 앞/뒤 따로 잡혀 24배 축소되던 버그)."""
+    assert _find_areas("부지 4만1764㎡ 규모")[0] == "41,764㎡"
+
+
+def test_area_myriad_variants():
+    """만 단위 단독·소수·공백·콤마 변형."""
+    assert _find_areas("12만㎡")[0] == "120,000㎡"
+    assert _find_areas("1.5만평")[0] == "15,000평"
+    assert _find_areas("연면적 3만3000㎡")[0] == "33,000㎡"
+    assert _find_areas("약 4만 1,764㎡")[0] == "41,764㎡"
+
+
+def test_area_plain_unchanged():
+    """일반 표기는 그대로."""
+    assert _find_areas("750㎡ 매장")[0] == "750㎡"
+    assert _find_areas("12,000㎡ 클린룸")[0] == "12,000㎡"
+
+
+def test_area_no_false_match():
+    """단위 글자 '평'(평택/평당)·금액(만원)을 면적으로 오매칭하지 않음."""
+    assert _find_areas("케이엔제이, 평택 브레인시티 공장") == []
+    assert _find_areas("취득금액은 약 435억9000만원") == []
+    assert _find_areas("서울 강남, 평당 1억") == []
+
+
+def test_area_e2e_keienjei():
+    """E2E: 케이엔제이 실기사 → stage1 패턴에 'area:41,764㎡' 저장."""
+    a = _make(
+        "케이엔제이, 평택 브레인시티 신규 공장부지 확보…생산능력 확대 추진",
+        "취득 부지는 경기도 평택 브레인시티 산업단지 내 4만1764㎡ 규모로 "
+        "취득금액은 약 435억9000만원이다.",
+    )
+    out = apply_filter(a)
+    assert "area:41,764㎡" in out.stage1_matched_patterns

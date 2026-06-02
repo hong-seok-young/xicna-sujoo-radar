@@ -62,6 +62,38 @@ def _find_regex(text: str, patterns: list[str]) -> list[str]:
     return found
 
 
+# 면적 표기 추출 — 한글 "만" 단위 혼합 표기 정규화 포함.
+# config 의 area_regex 만으로는 "4만1764㎡"(=41,764㎡) 같은 혼합 표기에서
+# 만 앞("4만")이나 뒤("1764㎡")만 따로 잡혀 면적이 ~24배 축소되는 버그가 있었다.
+# (케이엔제이 평택 브레인시티 4만1764㎡ 가 "1764㎡" 로 표시되던 케이스)
+# 여기서 "N만M" 형태를 N*10000+M 로 풀어 "41,764㎡" 로 정규화한다.
+# 반드시 숫자로 시작 (맨 콤마/공백이 단위 글자 '평'(예: "평택")에 붙어 오매칭되는 것 방지)
+_AREA_MYRIAD_RE = re.compile(r"(\d+(?:\.\d+)?)\s*만\s*(\d[\d,]{0,4})?\s*(㎡|평)")
+_AREA_PLAIN_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(㎡|평)")
+
+
+def _find_areas(text: str) -> list[str]:
+    """면적 표기를 ㎡/평 단위로 추출·정규화. 만 단위 혼합 표기 처리.
+
+    '4만1764㎡' → '41,764㎡', '12만㎡' → '120,000㎡', '1.5만평' → '15,000평',
+    '750㎡' → '750㎡', '12,000㎡' → '12,000㎡'.
+    """
+    spans: list[tuple[int, int, str]] = []  # (start, end, 정규화 문자열)
+    # 1) 만 단위(혼합/단독) — 먼저 처리해 구간 선점
+    for m in _AREA_MYRIAD_RE.finditer(text):
+        man = float(m.group(1))
+        rest = int((m.group(2) or "").replace(",", "") or 0)
+        total = int(round(man * 10000)) + rest
+        spans.append((m.start(), m.end(), f"{total:,}{m.group(3)}"))
+    # 2) 일반 표기 — 만-매치 구간과 겹치면("4만[1764㎡]" 의 꼬리 등) 스킵
+    for m in _AREA_PLAIN_RE.finditer(text):
+        if any(s <= m.start() < e for s, e, _ in spans):
+            continue
+        spans.append((m.start(), m.end(), m.group(0).replace(" ", "")))
+    spans.sort()
+    return [norm for _, _, norm in spans]
+
+
 def evaluate(article: Article) -> FilterResult:
     """Article 1건을 평가. FilterResult 반환."""
     rules = filter_rules()
@@ -74,7 +106,7 @@ def evaluate(article: Article) -> FilterResult:
     actions = _find_keywords(text, rules["action_patterns"])
     targets = _find_keywords(text, rules["target_patterns"])
     money = _find_regex(text, rules["money_regex"])
-    area = _find_regex(text, rules["area_regex"])
+    area = _find_areas(text)  # 만 단위 혼합표기(4만1764㎡) 정규화 — config area_regex 대체
 
     # 매칭 규칙 평가
     has = {

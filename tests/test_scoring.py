@@ -66,3 +66,35 @@ def test_larger_amount_scores_higher():
     big = _s(source="dart1", amount_won=3000 * EOK, categories=["CR"])
     small = _s(source="dart1", amount_won=500 * EOK, categories=["CR"])
     assert big > small
+
+
+def test_source_base_ordering():
+    """동일 입력에서 출처 서열: dart1 > news_high > mfds > dart2 > news_mid > news_low."""
+    def s(src):
+        return _s(source=src, amount_won=600 * EOK, categories=["제약/바이오"])
+    assert (s("dart1") > s("news_high") > s("mfds")
+            > s("dart2") > s("news_mid") > s("news_low"))
+
+
+def test_news_tiers_decreasing():
+    """뉴스 HIGH > MID > LOW (동일 기사 조건)."""
+    hi = _s(source="news_high", amount_won=0, categories=["CR"])
+    mid = _s(source="news_mid", amount_won=0, categories=["CR"])
+    lo = _s(source="news_low", amount_won=0, categories=["CR"])
+    assert hi > mid > lo
+
+
+def test_mfds_big_pharma_outranks_small():
+    """식약처: 매출(규모축 대입) 큰 제약사가 작은 제약사보다 높다 (발주 여력 우선)."""
+    big = _s(source="mfds", amount_won=10000 * EOK, categories=["제약/바이오"], is_new=True)
+    small = _s(source="mfds", amount_won=300 * EOK, categories=["제약/바이오"], is_new=True)
+    assert big > small
+    # 대형 제약사 + 핵심시설 → 최소 A급(선제 접촉) 이상
+    assert grade_for(big) in ("S", "A")
+
+
+def test_mfds_recent_gmp_beats_old():
+    """최근(90일 이내) GMP 발급(is_new=True)이 오래된 것보다 높다 — 활성 신호 가산."""
+    recent = _s(source="mfds", amount_won=5000 * EOK, categories=["제약/바이오"], is_new=True)
+    old = _s(source="mfds", amount_won=5000 * EOK, categories=["제약/바이오"], is_new=False)
+    assert recent > old

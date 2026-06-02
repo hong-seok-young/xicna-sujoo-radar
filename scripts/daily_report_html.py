@@ -1997,6 +1997,15 @@ def render_mfds_company_row(company_items: list[dict], idx: int, today_d=None) -
     )
     # 번호 셀 (rowspan=N)
     idx_cell = f'<td class="num-col" style="vertical-align:top;" rowspan="{n}">{idx}</td>'
+    # 발주가능성 점수 셀 (회사 단위, rowspan=N) — 매출(발주 여력)+최근 GMP+제약/바이오 적합도 기반
+    _sc = _mfds_score(company_items)
+    _sc_color = _GRADE_COLORS.get(_sc["grade"], "#888")
+    score_cell = (
+        f'<td class="score-col" data-score="{_sc["score"]}" rowspan="{n}" '
+        f'style="text-align:center;white-space:nowrap;vertical-align:top;">'
+        f'<span style="font-weight:800;color:{_sc_color};font-size:15px;">{_sc["score"]}</span>'
+        f'<div style="font-size:10px;font-weight:700;color:{_sc_color};letter-spacing:.5px;">{_sc["grade"]}</div></td>'
+    )
 
     # GMP 별 행 — 첫 행에는 회사/번호/링크 셀 포함, 나머지 행은 GMP 셀만
     rows: list[str] = []
@@ -2054,7 +2063,7 @@ def render_mfds_company_row(company_items: list[dict], idx: int, today_d=None) -
             mfds_fav_title = bssh_raw + (f' ({n}건)' if n > 1 else '')
             row_html = (
                 f'<tr data-filterable data-fav-id="{_esc(mfds_fid)}" data-fav-title="{_esc(mfds_fav_title)}" data-url="{_esc(first.get("url",""))}" data-section-id="mfds" data-mfds-min-days="{mfds_min_days}" data-search="{search_attr}" data-categories="{cats_attr}">'
-                f'{idx_cell}{company_cell}'
+                f'{idx_cell}{score_cell}{company_cell}'
                 f'{kind_cell}{form_cell}{issued_cell}{vld_cell}{addr_cell}'
                 f'{links_cell}'
                 f'</tr>'
@@ -2436,6 +2445,50 @@ def _dart2_score(it: dict) -> dict:
     )
 
 
+def _mfds_company_revenue(bssh: str) -> int:
+    """식약처 회사명 → DART 매칭 매출(원). 매칭 실패(CDMO/바이오 등)면 0."""
+    m = _match_pharma_company(bssh or "")
+    return m[1].get("revenue", 0) if m else 0
+
+
+def _mfds_score(company_items: list[dict]) -> dict:
+    """식약처 GMP 회사 발주가능성 점수 (회사 그룹 단위).
+
+    GMP 적합판정은 '투자 금액'이 없는 간접 신호(증설 여력)다. 따라서 규모(scale) 축에는
+    회사 매출(=발주 여력 규모)을 대입한다 — 큰 제약사일수록 큰 공장 발주 가능성↑.
+    가장 최근 GMP 발급추정일이 90일 이내면 '활성(신규)' 신호로 실현강도를 가산한다.
+    부지 확보(has_site)는 기존 공장 주소일 뿐 신규 부지가 아니므로 False.
+    """
+    if not company_items:
+        return score_opportunity(source="mfds", amount_won=0, categories=["제약/바이오"])
+    first = company_items[0]
+    revenue = _mfds_company_revenue((first.get("bssh") or "").strip())
+    # 회사 그룹 카테고리 합집합 (없으면 제약/바이오). '기타' 노이즈 제거.
+    cats: list[str] = []
+    for it in company_items:
+        for c in (_cats_for(it) or []):
+            if c not in cats:
+                cats.append(c)
+    cats = [c for c in cats if c != "기타"] or ["제약/바이오"]
+    # 가장 최근 발급추정일이 90일 이내면 활성 신호(=신규로 취급)
+    today_d = datetime.now(KST).date()
+    recent = False
+    for it in company_items:
+        s = (it.get("issued_est") or "").strip()
+        if len(s) >= 10:
+            try:
+                d = datetime.strptime(s[:10], "%Y-%m-%d").date()
+                if 0 <= (today_d - d).days <= 90:
+                    recent = True
+                    break
+            except ValueError:
+                pass
+    return score_opportunity(
+        source="mfds", amount_won=revenue, categories=cats,
+        is_new=recent, equity_ratio=None, has_site=False,
+    )
+
+
 def render_dart_primary_card(it: dict, idx: int, group: str = "") -> str:
     """DART 1차 시설투자 결정 — 본문 정형필드(투자구분/금액/자본대비/목적/기간)를 열 분리."""
     title_raw = it.get("title", "")
@@ -2798,9 +2851,11 @@ def render_rss_mid_row(reason: str, it: dict, idx: int) -> str:
     url = _esc(it.get("url", ""))
     cats = _cats_for(it)
     match_cell = _render_match_cell(patterns, reason, limit=3)
+    score_cell = _score_cell(_news_score(it, "news_mid"))
     search = f"{title} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="rss-mid" data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
+  {score_cell}
   <td>{src}</td>
   <td>{_render_chips(cats)} {title}</td>
   <td>{match_cell}</td>
@@ -2816,9 +2871,11 @@ def render_rss_low_row(reason: str, it: dict, idx: int) -> str:
     patterns = (it.get("stage1_matched_patterns") or [])
     cats = _cats_for(it)
     match_cell = _render_match_cell(patterns, reason, limit=3)
+    score_cell = _score_cell(_news_score(it, "news_low"))
     search = f"{title} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="rss-low" data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
+  {score_cell}
   <td>{src}</td>
   <td>{_render_chips(cats)} {title}</td>
   <td>{match_cell}</td>
@@ -3010,7 +3067,10 @@ def main():
                     pass
         return False
 
-    _all_groups.sort(key=_group_has_new, reverse=True)
+    # 🆕 NEW(7일) 회사 최상단 → 그 안에서 발주가능성 점수(매출·최근GMP·적합도) 내림차순.
+    _all_groups.sort(
+        key=lambda g: (_group_has_new(g), _mfds_score(g[1])["score"]), reverse=True,
+    )
     mfds_groups = _all_groups[: args.mfds_card_limit]
     mfds_card_count = sum(len(items) for _, items in mfds_groups)
     mfds_new_count = sum(1 for g in mfds_groups if _group_has_new(g))
@@ -3044,8 +3104,11 @@ def main():
     rss_high = [(r, it) for l, r, it in rss_classified if l == "HIGH"]
     rss_mid = [(r, it) for l, r, it in rss_classified if l == "MID"]
     rss_low = [(r, it) for l, r, it in rss_classified if l == "LOW"]
-    # 뉴스 HIGH — 발주가능성 점수 내림차순 (영업 우선순위 노출)
-    rss_high.sort(key=lambda ri: _news_score(ri[1])["score"], reverse=True)
+    # 뉴스 HIGH/MID/LOW — 발주가능성 점수 내림차순 (영업 우선순위 노출).
+    # 동점은 stable sort 라 직전 published_at 내림차순(최신 먼저)이 유지됨.
+    rss_high.sort(key=lambda ri: _news_score(ri[1], "news_high")["score"], reverse=True)
+    rss_mid.sort(key=lambda ri: _news_score(ri[1], "news_mid")["score"], reverse=True)
+    rss_low.sort(key=lambda ri: _news_score(ri[1], "news_low")["score"], reverse=True)
 
     # DART 1차 — 신규시설투자등 중 건설 영업 대상만. 선박/항공기/엔진 등 동산 자산 취득은 컷.
     # + 시설투자/자산취득 '철회' 정정공시는 영업 가치 없음 → 별도 컷.
@@ -3288,7 +3351,7 @@ def main():
   <h2 id="mfds" data-section="mfds">💊 3. 식약처 의약품 GMP 적합판정 — 매출 50위 + CDMO/바이오 ({len(mfds_groups)}개사{f', <span style="color:var(--accent-good);font-weight:700;">🆕 NEW {mfds_new_count}개사</span>' if mfds_new_count else ''}, GMP {mfds_card_count}건 / 전체 {len(mfds_items)}건 中)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
   <p style="color:var(--muted);"><b>데이터 수집일: {today_str}</b> · 발급추정일은 <b>유효기간(vld) − 3년</b> 역산 (GMP 적합판정 유효기간 3년 가정). 식약처 OpenAPI 응답에 발급일자 필드 자체가 없음 — 정확도 한계. 의약품안전나라의 "허가일자" 는 의약품 품목허가일이라 GMP 발급일과 별개.<br/><br/>
   <b>표시 규칙</b>: 🆕 NEW (7일 이내) → 녹색 강조 · 30일 이내 → "{_quarter_label(today_d)} · N일 전" · 그 이상은 분기·개월수 표시. NEW 회사를 최상단 배치.<br/>
-  <b>필터</b>: 매출 매칭 (3,000억+ 또는 CDMO/바이오 — 500억+ 공장 발주 여력) 통과 회사 전체 표시. 그룹 내부 매출 큰 순. <b>아래 기간 버튼</b>으로 발급추정일 기준 좁히기 (행 단위 동적 필터). <b>🏛️ 식약처 의약품안전나라</b> 링크는 회사 허가 의약품 라인업 (참고용).</p>
+  <b>필터</b>: 매출 매칭 (3,000억+ 또는 CDMO/바이오 — 500억+ 공장 발주 여력) 통과 회사 전체 표시. <b>발주가능성 점수순</b> 정렬 (매출·최근 GMP·제약바이오 적합도 / 🆕 NEW 7일 이내 최상단). <b>아래 기간 버튼</b>으로 발급추정일 기준 좁히기 (행 단위 동적 필터). <b>🏛️ 식약처 의약품안전나라</b> 링크는 회사 허가 의약품 라인업 (참고용).</p>
 """)
     parts.append(_placeholder("mfds", "식약처 GMP 적합판정", len(mfds_items) == 0))
     if mfds_items:
@@ -3310,6 +3373,7 @@ def main():
         parts.append("""  <table>
     <thead><tr>
       <th>#</th>
+      <th title="발주가능성 점수 — 매출(발주 여력)·최근 GMP·제약바이오 적합도. S 80+ / A 60+ / B 40+ / C">점수</th>
       <th>회사</th>
       <th>구분</th>
       <th>제형</th>
@@ -3361,12 +3425,12 @@ def main():
     # === RSS MID ===
     parts.append(f"""
   <h2 id="rss-mid" data-section="rss-mid" data-collapsible="1">🟡 5. [참조] 뉴스 MID ({len(rss_mid)}건)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
-  <p style="color:var(--muted);">일부 조건만 만족. 제목으로 빠른 스캔.</p>
+  <p style="color:var(--muted);">일부 조건만 만족. 제목으로 빠른 스캔. <b>발주가능성 점수순</b> 정렬.</p>
 """)
     parts.append(_placeholder("rss-mid", "뉴스 MID", len(rss_mid) == 0))
     if rss_mid:
         parts.append("""  <table>
-    <thead><tr><th>#</th><th>매체</th><th>제목</th><th>매칭 키워드</th><th>게시일</th></tr></thead>
+    <thead><tr><th>#</th><th title="발주가능성 점수 — S 80+ / A 60+ / B 40+ / C">점수</th><th>매체</th><th>제목</th><th>매칭 키워드</th><th>게시일</th></tr></thead>
     <tbody>
 """)
         for i, (reason, it) in enumerate(rss_mid, 1):
@@ -3376,12 +3440,12 @@ def main():
     # === RSS LOW ===
     parts.append(f"""
   <h2 id="rss-low" data-section="rss-low" data-collapsible="1">🔴 6. [참조] 뉴스 LOW ({len(rss_low)}건)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
-  <p style="color:var(--muted);">노이즈 가능성. 5초 안에 패스.</p>
+  <p style="color:var(--muted);">노이즈 가능성. 5초 안에 패스. <b>발주가능성 점수순</b> 정렬.</p>
 """)
     parts.append(_placeholder("rss-low", "뉴스 LOW", len(rss_low) == 0))
     if rss_low:
         parts.append("""  <table>
-    <thead><tr><th>#</th><th>매체</th><th>제목</th><th>매칭 키워드</th><th>게시일</th></tr></thead>
+    <thead><tr><th>#</th><th title="발주가능성 점수 — S 80+ / A 60+ / B 40+ / C">점수</th><th>매체</th><th>제목</th><th>매칭 키워드</th><th>게시일</th></tr></thead>
     <tbody>
 """)
         for i, (reason, it) in enumerate(rss_low, 1):

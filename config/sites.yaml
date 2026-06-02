@@ -22,12 +22,7 @@ sites:
     api: "g2b"
     notes: "공공데이터포털 입찰공고 API"
 
-  - name: "건축HUB"
-    url: "https://hub.go.kr"
-    tier: 1
-    type: "api"
-    api: "eais"
-    notes: "건축인허가 OpenAPI"
+  # 건축HUB(세움터/EAIS) 제거 — 영업팀 요청으로 정보 불필요 (2026-06-02)
 
   # ─── Tier 2: HTML 크롤링 (사이트별 어댑터 필요) ───
   - name: "FactoryOn"

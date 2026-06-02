@@ -1,10 +1,10 @@
-name: Daily report (자동발송)
+name: 주간 리포트 (자동발송)
 
 on:
   schedule:
-    # 본 운영: 매일 07:00 KST = 22:00 UTC (전날)
-    # GitHub schedule 5~30분 지연 감안하면 실제 도착 07:05~07:30 KST
-    - cron: '0 22 * * *'
+    # 본 운영: 매주 금요일 08:00 KST = 목요일 23:00 UTC
+    # GitHub schedule 5~30분 지연 감안하면 실제 도착 금 08:05~08:30 KST
+    - cron: '0 23 * * 4'
   workflow_dispatch:
 
 permissions:
@@ -25,7 +25,7 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - name: Restore data/cache (EAIS, DART body, MFDS prev-snapshot)
+      - name: Restore data/cache (DART body, MFDS prev-snapshot)
         uses: actions/cache@v4
         with:
           path: data/cache
@@ -42,15 +42,14 @@ jobs:
           fi
           pip install python-dotenv
 
-      - name: Run daily pipeline (수집 + 필터 + HTML 리포트)
+      - name: Run weekly pipeline (수집 + 필터 + HTML 리포트)
         shell: bash
         env:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           G2B_API_KEY:      ${{ secrets.DATA_GO_KR_KEY }}
-          EAIS_API_KEY:     ${{ secrets.DATA_GO_KR_KEY }}
         run: |
           mkdir -p data/raw data/filtered data/cache data/logs
-          # EAIS 포함 풀파이프라인. 첫 sweep 은 ~22분(900 API), 이후 캐시로 빠름
+          # 주간 풀파이프라인 (RSS·G2B·DART·MFDS). 세움터(EAIS)는 영업팀 요청으로 제거됨(2026-06-02).
           python scripts/run_weekly.py --no-open
 
       - name: Locate + verify report (품질 검증)
@@ -131,25 +130,25 @@ jobs:
           server_port: 587
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASS }}
-          subject: "[수주레이더] ${{ env.KST_DATE }} 데일리 리포트"
+          subject: "[수주레이더] ${{ env.KST_DATE }} 주간 리포트"
           to: ${{ secrets.REPORT_RECIPIENTS }}
           from: 수주레이더 봇 <${{ secrets.SMTP_USER }}>
           html_body: |
             <div style="font-family:-apple-system,'맑은 고딕','Malgun Gothic',sans-serif;max-width:560px;padding:20px;color:#222;line-height:1.6">
               <h2 style="color:#0969da;margin-top:0">📊 수주레이더 ${{ env.KST_DATE }}</h2>
-              <p>오늘 수주레이더 리포트가 도착했습니다.</p>
+              <p>이번 주 수주레이더 리포트가 도착했습니다.</p>
               <div style="background:#f0f7ff;padding:14px 18px;border-left:4px solid #0969da;border-radius:4px;margin:18px 0">
                 📎 <b>첨부된 HTML 파일을 클릭</b>하여 브라우저에서 열어보세요.<br>
                 <span style="color:#555;font-size:.9em">메일 본문 인라인 렌더링은 일부 깨지므로, <b>첨부파일이 정식 버전</b>입니다. 더블클릭하면 즐겨찾기·필터·기간선택 등 모든 인터랙티브 기능이 작동합니다.</span>
               </div>
               <p style="margin-bottom:6px"><b>또는 웹으로 보기 (북마크 추천):</b></p>
               <ul style="padding-left:20px">
-                <li><a href="https://hong-seok-young.github.io/xicna-sujoo-radar/" style="color:#0969da">📊 최신 리포트 (항상 오늘 발사분)</a></li>
+                <li><a href="https://hong-seok-young.github.io/xicna-sujoo-radar/" style="color:#0969da">📊 최신 리포트 (항상 최신 발사분)</a></li>
                 <li><a href="https://hong-seok-young.github.io/xicna-sujoo-radar/archive/${{ env.KST_FILENAME }}.html" style="color:#0969da">📅 오늘 영구 링크 (${{ env.KST_FILENAME }})</a></li>
                 <li><a href="https://hong-seok-young.github.io/xicna-sujoo-radar/archive/" style="color:#0969da">📂 전체 일자별 아카이브</a></li>
               </ul>
               <hr style="border:none;border-top:1px solid #e0e0e0;margin:24px 0">
-              <p style="color:#888;font-size:.85em;margin:0">자동 발송 · 매일 07:00 KST · 자이씨앤에이 영업팀 · GitHub Actions</p>
+              <p style="color:#888;font-size:.85em;margin:0">자동 발송 · 매주 금요일 08:00 KST · 자이씨앤에이 영업팀 · GitHub Actions</p>
             </div>
           attachments: ${{ env.ATT_PATH }}
 

@@ -137,10 +137,7 @@ feeds:
     url: "https://www.epnc.co.kr/rss/allArticle.xml"
     tier: 1
     domain: "epnc.co.kr"
-  - name: "배터리인사이드"
-    url: "https://www.batteryinside.com/feed"
-    tier: 1
-    domain: "batteryinside.com"
+  # 배터리인사이드(batteryinside.com = BatteryDive) 제거 — 유료 로그인 접근불가 (영업팀 요청 2026-06-02)
 
   # ─────────────────────────────────────────────────────────
   # Tier 1 — 제약·바이오 전문지

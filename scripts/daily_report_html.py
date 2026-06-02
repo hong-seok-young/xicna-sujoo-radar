@@ -1380,7 +1380,6 @@ td.num-col { width: 40px; color: var(--muted); }
   letter-spacing: 0.08em; opacity: 0.75; border-left: 1px dashed var(--border); }
 
 /* ===== 섹션별 액센트 컬러 — TOC dot + 즐겨찾기 태그 공통 사용 ===== */
-.sec-color-eais     { --sec-accent: var(--accent-good); }   /* 세움터 = 녹 (인허가) */
 .sec-color-dart1    { --sec-accent: var(--gold); }          /* DART 1차 = 금 (시설투자) */
 .sec-color-rss-high { --sec-accent: var(--green); }         /* 뉴스 HIGH = 녹 */
 .sec-color-mfds     { --sec-accent: var(--cdmo-fg); }       /* MFDS = 보라 (제약/바이오) */
@@ -1654,7 +1653,7 @@ function attachToc() {
 // ===== 즐겨찾기 (★) — 행 왼쪽 별 + 맨 위 고정 패널 =====
 const FAV_STORAGE_KEY = 'sujoo_favorites_v1';
 const SEC_LABEL = {
-  'g2b':'나라장터','eais':'세움터','dart1':'DART 1차','dart2':'DART 2차',
+  'g2b':'나라장터','dart1':'DART 1차','dart2':'DART 2차',
   'rss-high':'뉴스 HIGH','rss-mid':'뉴스 MID','rss-low':'뉴스 LOW','mfds':'식약처 GMP'
 };
 function loadFavs(){
@@ -2705,8 +2704,6 @@ def main():
     ap.add_argument("--g2b", default=f"data/raw/g2b_{today_str}.jsonl",
                     help="G2B 입찰공고 JSONL (기본: 오늘 날짜)")
     ap.add_argument("--dart", default=f"data/raw/dart_{today_str}.jsonl")
-    ap.add_argument("--eais", default=f"data/raw/eais_{today_str}.jsonl",
-                    help="EAIS 건축인허가 JSONL 경로 (기본: 오늘 날짜)")
     ap.add_argument("--mfds", default=f"data/raw/mfds_gmp_{today_str}.jsonl",
                     help="MFDS GMP 적합판정 JSONL 경로 (기본: 오늘 날짜)")
     ap.add_argument("--mfds-card-limit", type=int, default=50,
@@ -2717,11 +2714,6 @@ def main():
                          "7일 이내는 🆕 NEW 강조.")
     ap.add_argument("--period-days", type=int, default=7,
                     help="리포트 기간 (일) — subtitle/빈섹션 표시용. 기본 7일.")
-    ap.add_argument("--eais-days", type=int, default=7,
-                    help="EAIS 건축인허가 룩백 윈도우 (일) — 섹션 헤더 표기용. "
-                         "수집 윈도우(eais.py --days)와 맞출 것. 기본 7.")
-    ap.add_argument("--eais-threshold-eok", type=float, default=450,
-                    help="EAIS 추정공사비 임계값 (억) — 섹션 헤더 표기용. 수집(eais.py --threshold-eok)과 맞출 것. 기본 450.")
     ap.add_argument("--output", default=None)
     args = ap.parse_args()
 
@@ -2744,12 +2736,8 @@ def main():
     g2b_items.sort(key=_g2b_price, reverse=True)
     g2b_cut = len(g2b_items_all) - len(g2b_items)
     dart_items = _read_jsonl(_resolve(args.dart))
-    eais_items = _read_jsonl(_resolve(args.eais))
-    # EAIS — 연면적 큰 순 정렬 (영업 영향 큰 사업부터)
-    eais_items.sort(
-        key=lambda it: _extract_eais_fields(it.get("content", "")).get("gross_area", 0.0),
-        reverse=True,
-    )
+    # 세움터(EAIS) 제거 — 영업팀 요청(2026-06-02). 데이터 미수집 → 빈 리스트 고정.
+    eais_items: list[dict] = []
     mfds_items = _read_jsonl(_resolve(args.mfds))
     # MFDS — 유효기간 늦은 순 정렬 (= GMP 3년 가정 시 최근 발급 추정 우선)
     mfds_items.sort(key=lambda x: x.get("vld", ""), reverse=True)
@@ -2908,15 +2896,14 @@ def main():
 <nav class="float-toc" aria-label="목차">
   <div class="toc-title">목차</div>
   <a href="#favorites" data-toc="favorites" class="toc-pin">중요정보 <span class="cnt" id="fav-count-toc">0</span></a>
-  <a href="#eais" data-toc="eais" class="toc-primary sec-color-eais">1. 세움터 <span class="cnt">{len(eais_items)}</span></a>
-  <a href="#dart1" data-toc="dart1" class="toc-primary sec-color-dart1">2. DART 1차 <span class="cnt">{len(dart_primary)}</span></a>
-  <a href="#rss-high" data-toc="rss-high" class="toc-primary sec-color-rss-high">3. 뉴스 HIGH <span class="cnt">{len(rss_high)}</span></a>
-  <a href="#mfds" data-toc="mfds" class="toc-primary sec-color-mfds">4. 식약처 GMP <span class="cnt">{len(mfds_items)}</span></a>
+  <a href="#dart1" data-toc="dart1" class="toc-primary sec-color-dart1">1. DART 1차 <span class="cnt">{len(dart_primary)}</span></a>
+  <a href="#rss-high" data-toc="rss-high" class="toc-primary sec-color-rss-high">2. 뉴스 HIGH <span class="cnt">{len(rss_high)}</span></a>
+  <a href="#mfds" data-toc="mfds" class="toc-primary sec-color-mfds">3. 식약처 GMP <span class="cnt">{len(mfds_items)}</span></a>
   <div class="toc-sep">참조</div>
-  <a href="#dart2" data-toc="dart2" class="toc-ref sec-color-dart2">5. DART 2차 <span class="cnt">{len(dart_secondary)}</span></a>
-  <a href="#rss-mid" data-toc="rss-mid" class="toc-ref sec-color-rss-mid">6. 뉴스 MID <span class="cnt">{len(rss_mid)}</span></a>
-  <a href="#rss-low" data-toc="rss-low" class="toc-ref sec-color-rss-low">7. 뉴스 LOW <span class="cnt">{len(rss_low)}</span></a>
-  <a href="#g2b" data-toc="g2b" class="toc-ref sec-color-g2b">8. 나라장터 <span class="cnt">{len(g2b_items)}</span></a>
+  <a href="#dart2" data-toc="dart2" class="toc-ref sec-color-dart2">4. DART 2차 <span class="cnt">{len(dart_secondary)}</span></a>
+  <a href="#rss-mid" data-toc="rss-mid" class="toc-ref sec-color-rss-mid">5. 뉴스 MID <span class="cnt">{len(rss_mid)}</span></a>
+  <a href="#rss-low" data-toc="rss-low" class="toc-ref sec-color-rss-low">6. 뉴스 LOW <span class="cnt">{len(rss_low)}</span></a>
+  <a href="#g2b" data-toc="g2b" class="toc-ref sec-color-g2b">7. 나라장터 <span class="cnt">{len(g2b_items)}</span></a>
 </nav>
 
 <div class="container">
@@ -2930,15 +2917,14 @@ def main():
   <div class="sticky-zone">
     <div class="nav">
       <a href="#favorites" class="toc-pin">중요정보 <span id="fav-count-nav">0</span></a>
-      <a href="#eais" class="toc-primary sec-color-eais">1. 세움터 {len(eais_items)}</a>
-      <a href="#dart1" class="toc-primary sec-color-dart1">2. DART 1차 {len(dart_primary)}</a>
-      <a href="#rss-high" class="toc-primary sec-color-rss-high">3. 뉴스 HIGH {len(rss_high)}</a>
-      <a href="#mfds" class="toc-primary sec-color-mfds">4. 식약처 GMP {len(mfds_items)}</a>
+      <a href="#dart1" class="toc-primary sec-color-dart1">1. DART 1차 {len(dart_primary)}</a>
+      <a href="#rss-high" class="toc-primary sec-color-rss-high">2. 뉴스 HIGH {len(rss_high)}</a>
+      <a href="#mfds" class="toc-primary sec-color-mfds">3. 식약처 GMP {len(mfds_items)}</a>
       <span class="nav-sep">참조</span>
-      <a href="#dart2" class="toc-ref sec-color-dart2">5. DART 2차 {len(dart_secondary)}</a>
-      <a href="#rss-mid" class="toc-ref sec-color-rss-mid">6. 뉴스 MID {len(rss_mid)}</a>
-      <a href="#rss-low" class="toc-ref sec-color-rss-low">7. 뉴스 LOW {len(rss_low)}</a>
-      <a href="#g2b" class="toc-ref sec-color-g2b">8. 나라장터 {len(g2b_items)}</a>
+      <a href="#dart2" class="toc-ref sec-color-dart2">4. DART 2차 {len(dart_secondary)}</a>
+      <a href="#rss-mid" class="toc-ref sec-color-rss-mid">5. 뉴스 MID {len(rss_mid)}</a>
+      <a href="#rss-low" class="toc-ref sec-color-rss-low">6. 뉴스 LOW {len(rss_low)}</a>
+      <a href="#g2b" class="toc-ref sec-color-g2b">7. 나라장터 {len(g2b_items)}</a>
     </div>
 
     <div class="catbar">
@@ -2966,7 +2952,7 @@ def main():
   </div>  <!-- /.sticky-zone -->
 
   <p style="color:var(--muted); font-size:13px;">
-    💡 영업 우선순위: <strong>1.세움터 → 2.DART 1차 → 3.뉴스 HIGH → 4.식약처</strong> · <span style="color:var(--muted-soft);">[참조] 5.DART 2차 · 6.뉴스 MID · 7.뉴스 LOW · 8.나라장터(관급) — 영업 직접 대상 아니라 기본 접힘</span>.<br/>
+    💡 영업 우선순위: <strong>1.DART 1차 → 2.뉴스 HIGH → 3.식약처</strong> · <span style="color:var(--muted-soft);">[참조] 4.DART 2차 · 5.뉴스 MID · 6.뉴스 LOW · 7.나라장터(관급) — 영업 직접 대상 아니라 기본 접힘</span>.<br/>
     🏷️ 카테고리 칩을 클릭하면 해당 시설 유형만 필터링됩니다 · 각 행 왼쪽 <strong>☆ 별</strong>을 누르면 맨 위 <strong>⭐ 중요정보</strong>로 고정됩니다.
   </p>
 """)
@@ -2993,24 +2979,7 @@ def main():
     # → RSS LOW 다음, Footer 직전에 렌더링됨.
     g2b_cut_label = f", 1억 미만 {g2b_cut}건 컷" if g2b_cut else ""
 
-    # === EAIS 건축인허가 ===
-    parts.append(f"""
-  <h2 id="eais" data-section="eais">⭐⭐⭐ 1. 건축인허가 (세움터, 추정 {args.eais_threshold_eok:.0f}억+) ({len(eais_items)}건)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
-  <p style="color:var(--muted);">국토부 <b>세움터</b>(건축HUB) 인허가. 발주처가 건물 짓겠다 결정 + 부지·면적 확정 — 시공사 미정. 산업 후보 동 화이트리스트(config/industrial_dongs.csv, ~1,800동) × <b>최근 {args.eais_days}일 윈도우</b> × 추정공사비 {args.eais_threshold_eok:.0f}억+ 컷(필터링용·표시 안 함). <b>연면적 큰 순 정렬 · 1만㎡+ 강조</b>.<br/>
-  <span style="color:var(--muted);font-size:12px;">※ <b>원본 API 응답</b>: <code>data/cache/eais/{{sigunguCd}}_{{bjdongCd}}.json</code> — 동 단위 raw JSON 영구 캐시.<br/>
-  ※ 세움터 deep-link 가 외부 접근 불가라 주소 옆 <b>🗺️ 지도</b> + 끝 컬럼 <b>🏗️ 세움터</b>(메인) 두 버튼.</span></p>
-""")
-    parts.append(_placeholder("eais", "세움터 건축인허가", len(eais_items) == 0))
-    if eais_items:
-        parts.append("""  <table>
-    <thead><tr><th>#</th><th>사업명</th><th>주용도</th><th>건축구분</th><th style="text-align:right;">연면적</th><th>주소</th><th>인허가일</th><th>링크</th></tr></thead>
-    <tbody>
-""")
-        for i, it in enumerate(eais_items, 1):
-            parts.append(render_eais_card(it, i))
-        parts.append("    </tbody></table>")
-
-    # === DART 1차 ===
+    # === DART 1차 === (세움터/EAIS 섹션은 영업팀 요청으로 제거됨 2026-06-02)
     cut_bits: list[str] = []
     if dart_primary_cut_asset:
         cut_bits.append(f"동산자산 {dart_primary_cut_asset}건")
@@ -3018,7 +2987,7 @@ def main():
         cut_bits.append(f"철회 {dart_primary_cut_withdrawn}건")
     dart_primary_cut_label = f", {' · '.join(cut_bits)} 컷" if cut_bits else ""
     parts.append(f"""
-  <h2 id="dart1" data-section="dart1">⭐⭐⭐ 2. DART 1차 신호 — 시설투자 결정 ({len(dart_primary)}건{dart_primary_cut_label})<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
+  <h2 id="dart1" data-section="dart1">⭐⭐⭐ 1. DART 1차 신호 — 시설투자 결정 ({len(dart_primary)}건{dart_primary_cut_label})<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
   <p style="color:var(--muted);">발주처가 "시설 짓겠다" 결정. 시공사 미정 — 공시 후 3~6개월 내 발주 예정. <b>동산 자산 취득(선박·항공기·엔진) 및 시설투자/자산취득 '철회'는 영업 노이즈로 컷.</b> 신규/정정 분리, 그룹 내 투자금액 큰 순. <b>500억 이상 강조</b>.</p>
 """)
     parts.append(_placeholder("dart1", "DART 1차 시설투자 공시", len(dart_primary) == 0))
@@ -3066,7 +3035,7 @@ def main():
 
     # === RSS HIGH ===
     parts.append(f"""
-  <h2 id="rss-high" data-section="rss-high">🟢 3. 뉴스 HIGH ({len(rss_high)}건)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
+  <h2 id="rss-high" data-section="rss-high">🟢 2. 뉴스 HIGH ({len(rss_high)}건)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
   <p style="color:var(--muted);">강한 action(착공/신축/증설/수주) + 강한 target(공장/플랜트/클린룸). 본문 확인 필요.</p>
 """)
     parts.append(_placeholder("rss-high", "뉴스 HIGH", len(rss_high) == 0))
@@ -3081,7 +3050,7 @@ def main():
 
     # === MFDS GMP (DART 2차 위로 이동 — 사용자 우선순위 조정) ===
     parts.append(f"""
-  <h2 id="mfds" data-section="mfds">💊 4. 식약처 의약품 GMP 적합판정 — 매출 50위 + CDMO/바이오 ({len(mfds_groups)}개사{f', <span style="color:var(--accent-good);font-weight:700;">🆕 NEW {mfds_new_count}개사</span>' if mfds_new_count else ''}, GMP {mfds_card_count}건 / 전체 {len(mfds_items)}건 中)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
+  <h2 id="mfds" data-section="mfds">💊 3. 식약처 의약품 GMP 적합판정 — 매출 50위 + CDMO/바이오 ({len(mfds_groups)}개사{f', <span style="color:var(--accent-good);font-weight:700;">🆕 NEW {mfds_new_count}개사</span>' if mfds_new_count else ''}, GMP {mfds_card_count}건 / 전체 {len(mfds_items)}건 中)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
   <p style="color:var(--muted);"><b>데이터 수집일: {today_str}</b> · 발급추정일은 <b>유효기간(vld) − 3년</b> 역산 (GMP 적합판정 유효기간 3년 가정). 식약처 OpenAPI 응답에 발급일자 필드 자체가 없음 — 정확도 한계. 의약품안전나라의 "허가일자" 는 의약품 품목허가일이라 GMP 발급일과 별개.<br/><br/>
   <b>표시 규칙</b>: 🆕 NEW (7일 이내) → 녹색 강조 · 30일 이내 → "{_quarter_label(today_d)} · N일 전" · 그 이상은 분기·개월수 표시. NEW 회사를 최상단 배치.<br/>
   <b>필터</b>: 매출 매칭 (3,000억+ 또는 CDMO/바이오 — 500억+ 공장 발주 여력) 통과 회사 전체 표시. 그룹 내부 매출 큰 순. <b>아래 기간 버튼</b>으로 발급추정일 기준 좁히기 (행 단위 동적 필터). <b>🏛️ 식약처 의약품안전나라</b> 링크는 회사 허가 의약품 라인업 (참고용).</p>
@@ -3122,7 +3091,7 @@ def main():
 
     # === DART 2차 (참조 — 시공사 이미 확정된 케이스, 영업 직접 대상 아님. 기본 접힘) ===
     parts.append(f"""
-  <h2 id="dart2" data-section="dart2" data-collapsible="1">⭐⭐ 5. [참조] DART 2차 정보 — 시공사 공급계약체결 500억+ ({len(dart_secondary)}건, 500억 미만 {dart_secondary_cut}건 컷)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
+  <h2 id="dart2" data-section="dart2" data-collapsible="1">⭐⭐ 4. [참조] DART 2차 정보 — 시공사 공급계약체결 500억+ ({len(dart_secondary)}건, 500억 미만 {dart_secondary_cut}건 컷)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
   <p style="color:var(--muted);">이미 시공사 결정된 케이스. 협력사·하청 영업, 경쟁사 동향, 발주처-시공사 매칭 파악용. <b>계약금액 500억 이상만, 큰 순 정렬, 신규/정정 분리</b>. 본문 "계약상대방·공급지역·계약기간" 본문 파싱해서 열로 분리.</p>
 """)
     parts.append(_placeholder("dart2", "DART 2차 공급계약 공시", len(dart_secondary) == 0))
@@ -3156,7 +3125,7 @@ def main():
 
     # === RSS MID ===
     parts.append(f"""
-  <h2 id="rss-mid" data-section="rss-mid" data-collapsible="1">🟡 6. [참조] 뉴스 MID ({len(rss_mid)}건)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
+  <h2 id="rss-mid" data-section="rss-mid" data-collapsible="1">🟡 5. [참조] 뉴스 MID ({len(rss_mid)}건)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
   <p style="color:var(--muted);">일부 조건만 만족. 제목으로 빠른 스캔.</p>
 """)
     parts.append(_placeholder("rss-mid", "뉴스 MID", len(rss_mid) == 0))
@@ -3171,7 +3140,7 @@ def main():
 
     # === RSS LOW ===
     parts.append(f"""
-  <h2 id="rss-low" data-section="rss-low" data-collapsible="1">🔴 7. [참조] 뉴스 LOW ({len(rss_low)}건)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
+  <h2 id="rss-low" data-section="rss-low" data-collapsible="1">🔴 6. [참조] 뉴스 LOW ({len(rss_low)}건)<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
   <p style="color:var(--muted);">노이즈 가능성. 5초 안에 패스.</p>
 """)
     parts.append(_placeholder("rss-low", "뉴스 LOW", len(rss_low) == 0))
@@ -3186,7 +3155,7 @@ def main():
 
     # === G2B (관급 — 영업 대상 아님, 기본 접힘. 페이지 맨 아래로 배치) ===
     parts.append(f"""
-  <h2 id="g2b" data-section="g2b" data-collapsible="1">⭐ 8. [참조] 나라장터 입찰공고 (관급 — 영업 대상 아님) ({len(g2b_items)}건{g2b_cut_label})<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
+  <h2 id="g2b" data-section="g2b" data-collapsible="1">⭐ 7. [참조] 나라장터 입찰공고 (관급 — 영업 대상 아님) ({len(g2b_items)}건{g2b_cut_label})<span class="visible-count" style="color:var(--muted);font-size:13px;font-weight:400;"></span></h2>
   <p style="color:var(--muted);">공공/관급 시설공사 입찰. 자이씨앤에이는 관급 대상이 아니므로 참고용. 기본 접힘 — 필요 시 헤더 클릭하면 펼쳐짐.</p>
 """)
     parts.append(_placeholder("g2b", "나라장터 입찰공고", len(g2b_items) == 0))
@@ -3203,7 +3172,7 @@ def main():
     parts.append(f"""
   <div class="footer">
     생성: {datetime.now(KST).strftime('%Y-%m-%d %H:%M')} KST ·
-    데이터: 나라장터 + 세움터 + DART OpenAPI + 식약처 GMP + 뉴스 45개 매체
+    데이터: 나라장터 + DART OpenAPI + 식약처 GMP + 뉴스 45개 매체
   </div>
 </div>
 <button class="top-btn" id="topBtn" title="맨 위로" onclick="window.scrollTo({{top:0,behavior:'smooth'}})">↑</button>
@@ -3243,7 +3212,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("".join(parts), encoding="utf-8")
     print(f"HTML 리포트 저장: {out}")
-    print(f"  ⭐ G2B {len(g2b_items)}  ⭐ EAIS {len(eais_items)}  ⭐ DART1 {len(dart_primary)}  "
+    print(f"  ⭐ G2B {len(g2b_items)}  ⭐ DART1 {len(dart_primary)}  "
           f"⭐⭐ DART2 {len(dart_secondary)}  💊 식약처 {len(mfds_items)}  🟢 RSS-HIGH {len(rss_high)}  "
           f"🟡 RSS-MID {len(rss_mid)}  🔴 RSS-LOW {len(rss_low)}")
     print(f"  → 브라우저에서 더블클릭으로 열어보세요: {out.absolute()}")

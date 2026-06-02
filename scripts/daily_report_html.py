@@ -1464,6 +1464,20 @@ body.theme-light .mfds-period-btn:hover, body.theme-sepia .mfds-period-btn:hover
 .fav-star.on { color: var(--gold); opacity: 1; }
 td.num-col .fav-star { margin-right: 2px; }
 
+/* ===== 상단 대시보드 (KPI 카드 + TOP10 스코어링) ===== */
+.dashboard { margin: 0 0 22px; }
+.kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.kpi-card { flex: 1; min-width: 150px; background: var(--panel); border: 1px solid var(--gold);
+            border-radius: 10px; padding: 15px 18px; }
+.kpi-num { font-size: 30px; font-weight: 800; line-height: 1.1; }
+.kpi-label { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 5px; }
+.kpi-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.top10-wrap { background: var(--panel); border: 1px solid var(--gold); border-radius: 10px; padding: 14px 18px; }
+.top10-title { font-size: 16px; margin: 0 0 10px; border: 0; padding: 0; }
+.top10-table { width: 100%; border-collapse: collapse; }
+.top10-table th { text-align: left; font-size: 11.5px; color: var(--muted); padding: 6px 8px; border-bottom: 2px solid var(--border); }
+.top10-table td { padding: 9px 8px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+.src-badge { font-size: 11px; padding: 2px 8px; border-radius: 5px; background: var(--row-hover); color: var(--text); white-space: nowrap; }
 .favorites-pinned { background: var(--panel); border: 1px solid var(--gold);
   border-radius: 10px; padding: 14px 18px; margin: 16px 0 22px;
   box-shadow: 0 2px 14px rgba(255,200,87,0.10); }
@@ -2812,6 +2826,96 @@ def render_rss_low_row(reason: str, it: dict, idx: int) -> str:
 </tr>"""
 
 
+def _dart_corp(it: dict) -> str:
+    """DART title '[회사명] 보고서명' 에서 회사명 추출."""
+    t = it.get("title", "") or ""
+    if t.startswith("["):
+        e = t.find("]")
+        if e > 0:
+            return t[1:e]
+    return t
+
+
+def _collect_scored(dart_invest: list, dart_asset: list,
+                    rss_high: list, dart_secondary: list) -> list[dict]:
+    """전 섹션 항목을 발주가능성 점수로 통합 — 상단 대시보드(KPI/TOP10)용."""
+    out: list[dict] = []
+    for it in dart_invest + dart_asset:
+        sc = _dart_item_score(it)
+        amt = (_dart_asset_amount(it) if _is_dart_asset_acquisition(it)
+               else _dart_invest_amount(it))
+        f = _extract_dart_invest_fields(it.get("content") or "")
+        out.append({"score": sc["score"], "grade": sc["grade"], "src": "DART 1차",
+                    "corp": _dart_corp(it), "proj": f.get("invest_target") or f.get("purpose") or "",
+                    "cats": _cats_for(it), "amount": amt, "url": it.get("url", "")})
+    for _reason, it in rss_high:
+        sc = _news_score(it)
+        text = f"{it.get('title','')} {it.get('content','') or ''}"
+        out.append({"score": sc["score"], "grade": sc["grade"], "src": "뉴스 HIGH",
+                    "corp": _preview(it.get("title", ""), 40), "proj": "",
+                    "cats": _cats_for(it), "amount": _news_amount_won(text), "url": it.get("url", "")})
+    for it in dart_secondary:
+        sc = _dart2_score(it)
+        out.append({"score": sc["score"], "grade": sc["grade"], "src": "DART 2차",
+                    "corp": _dart_corp(it), "proj": "", "cats": _cats_for(it),
+                    "amount": _extract_dart_contract_amount(it), "url": it.get("url", "")})
+    out.sort(key=lambda x: x["score"], reverse=True)
+    return out
+
+
+def render_dashboard(scored: list[dict]) -> str:
+    """상단 대시보드 — KPI 4카드 + TOP10 스코어링 테이블 (영업팀 화면예시 구현)."""
+    if not scored:
+        return ""
+    s_cnt = sum(1 for x in scored if x["grade"] == "S")
+    a_cnt = sum(1 for x in scored if x["grade"] == "A")
+    invest = sum(x["amount"] for x in scored if x["grade"] in ("S", "A") and x["amount"])
+    invest_label = _format_won(invest) if invest else "—"
+
+    def _card(num, label, sub, color):
+        return (f'<div class="kpi-card"><div class="kpi-num" style="color:{color};">{num}</div>'
+                f'<div class="kpi-label">{label}</div><div class="kpi-sub">{sub}</div></div>')
+
+    cards = (
+        '<div class="kpi-row">'
+        + _card(len(scored), "총 분석 건수", "DART·뉴스 점수 대상", "var(--text)")
+        + _card(s_cnt, "S급 (80점+)", "즉시 영업 대상", "#e8453c")
+        + _card(a_cnt, "A급 (60~79)", "선제 접촉 권장", "#f59e0b")
+        + _card(invest_label, "S·A급 총 투자", "추정 합산", "var(--link)")
+        + '</div>'
+    )
+
+    rows = ""
+    for i, x in enumerate(scored[:10], 1):
+        color = _GRADE_COLORS.get(x["grade"], "#888")
+        proj = (f'<div style="font-size:11.5px;color:var(--muted);">{_esc(_preview(x["proj"], 46))}</div>'
+                if x["proj"] else "")
+        amt = _format_won(x["amount"]) if x["amount"] else '<span style="color:var(--muted);">미공시</span>'
+        if x["url"]:
+            corp_html = f'<a href="{_esc(x["url"])}" target="_blank" style="color:inherit;text-decoration:none;"><b>{_esc(x["corp"])}</b></a>'
+        else:
+            corp_html = f'<b>{_esc(x["corp"])}</b>'
+        rows += (
+            f'<tr><td class="num-col">{i}</td>'
+            f'<td>{corp_html}{proj}</td>'
+            f'<td style="white-space:nowrap;"><span class="src-badge">{_esc(x["src"])}</span></td>'
+            f'<td>{_render_chips(x["cats"])}</td>'
+            f'<td style="text-align:right;white-space:nowrap;font-weight:600;">{amt}</td>'
+            f'<td style="text-align:center;white-space:nowrap;">'
+            f'<span style="font-weight:800;color:{color};font-size:16px;">{x["score"]}</span>'
+            f'<div style="font-size:10px;font-weight:700;color:{color};">{x["grade"]}</div></td></tr>'
+        )
+
+    table = (
+        '<div class="top10-wrap"><h2 class="top10-title">🎯 TOP 10 프로젝트 스코어링</h2>'
+        '<table class="top10-table"><thead><tr>'
+        '<th>#</th><th>발주처 / 프로젝트</th><th>신호 출처</th><th>시설 유형</th>'
+        '<th style="text-align:right;">투자 규모</th><th style="text-align:center;">점수</th>'
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+    )
+    return f'<div class="dashboard">{cards}{table}</div>'
+
+
 def main():
     ap = argparse.ArgumentParser()
     today_str = datetime.now(KST).strftime("%Y-%m-%d")
@@ -3083,6 +3187,10 @@ def main():
     🏷️ 카테고리 칩을 클릭하면 해당 시설 유형만 필터링됩니다 · 각 행 왼쪽 <strong>☆ 별</strong>을 누르면 맨 위 <strong>⭐ 중요정보</strong>로 고정됩니다.
   </p>
 """)
+
+    # === Phase 3: 상단 대시보드 — 전 섹션 점수 통합 KPI 카드 + TOP10 스코어링 ===
+    _scored = _collect_scored(dart_invest_items, dart_asset_items, rss_high, dart_secondary)
+    parts.append(render_dashboard(_scored))
 
     # === ⭐ 중요정보 (즐겨찾기) — 맨 위 고정 패널. JS 가 별 토글마다 채움 ===
     parts.append("""

@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write
 
+# 풀(캐시) 동시 쓰기 방지 — 일일 수집(daily-collect)과 같은 그룹으로 직렬화
+concurrency:
+  group: rss-pool
+  cancel-in-progress: false
+
 jobs:
   generate-and-publish:
     runs-on: ubuntu-latest
@@ -33,6 +38,14 @@ jobs:
           restore-keys: |
             data-cache-
 
+      - name: Restore RSS pool cache (일일 수집 누적분 — 7일 병합용)
+        uses: actions/cache@v4
+        with:
+          path: data/pool
+          key: rss-pool-${{ github.run_number }}
+          restore-keys: |
+            rss-pool-
+
       - name: Install dependencies
         shell: bash
         run: |
@@ -48,9 +61,11 @@ jobs:
           OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
           G2B_API_KEY:      ${{ secrets.DATA_GO_KR_KEY }}
         run: |
-          mkdir -p data/raw data/filtered data/cache data/logs
-          # 주간 풀파이프라인 (RSS·G2B·DART·MFDS). 세움터(EAIS)는 영업팀 요청으로 제거됨(2026-06-02).
-          python scripts/run_weekly.py --no-open
+          mkdir -p data/raw data/filtered data/cache data/pool data/week data/logs
+          # 주간 풀파이프라인. --merge-pool: 매일 누적된 RSS 풀(data/pool)을 7일 병합(중복제거)해
+          # 리포트에 사용 → RSS 피드 롤오프 누락 방지. DART·G2B·MFDS 는 --days 7 일괄 수집.
+          # 세움터(EAIS)는 영업팀 요청으로 제거됨(2026-06-02).
+          python scripts/run_weekly.py --merge-pool --no-open
 
       - name: Locate + verify report (품질 검증)
         id: verify

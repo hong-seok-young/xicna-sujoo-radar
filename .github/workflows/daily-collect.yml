@@ -1,0 +1,94 @@
+name: 일일 수집 (RSS 누적)
+
+# RSS 피드는 최신 N건만 보관 → 주 1회만 긁으면 기사 많은 매체의 초반(월·화) 기사가
+# 금요일엔 피드에서 밀려나 누락된다. 매일 수집해 GitHub Actions 캐시(data/pool)에 쌓고,
+# 금요일 weekly-report 가 7일치를 병합(중복제거)해 사용한다.
+#   - 기사 본문을 repo(git)에 커밋하지 않음 → 캐시로 누적 (매일 접근하므로 7일 idle 만료도 없음)
+#   - DART·나라장터·식약처는 날짜범위 API라 롤오프가 없어 여기서 수집하지 않음 (금요일 일괄)
+
+on:
+  schedule:
+    # 매일 06:00 KST (전일 21:00 UTC). GitHub schedule 5~30분 지연 감안.
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 풀(캐시) 동시 쓰기 방지 — weekly-report 와 같은 그룹으로 직렬화 (서로 안 겹치게)
+concurrency:
+  group: rss-pool
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Restore/seed RSS pool cache (data/pool)
+        uses: actions/cache@v4
+        with:
+          path: data/pool
+          # run_number 로 매번 새 키 → 항상 저장. restore-keys 로 직전 풀 복원.
+          key: rss-pool-${{ github.run_number }}
+          restore-keys: |
+            rss-pool-
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          pip install python-dotenv
+
+      - name: Collect RSS + filter → pool
+        shell: bash
+        run: |
+          mkdir -p data/raw data/filtered data/pool data/logs
+          # RSS 만 수집 (공개 피드 — 외부 키 불필요). --days 2 (하루 겹침, 실행 한 번 건너뛰어도 구멍 X).
+          python scripts/run_collect.py --days 2 --keep-days 10
+
+      - name: 풀 상태 출력
+        if: always()
+        shell: bash
+        run: |
+          echo "현재 RSS 풀 (data/pool):"
+          ls -la data/pool/ 2>/dev/null || echo "  (아직 비어 있음 — 첫 실행)"
+          echo "보관 일수: $(ls -1 data/pool/rss_*.jsonl 2>/dev/null | wc -l)일치"
+
+      # ──────────────────────────────────────────────────────────
+      # 안전망: 실패 시 운영자(abcde@xicna.com)에게만 알림 (영업팀엔 안 보냄)
+      # ──────────────────────────────────────────────────────────
+      - name: 🚨 실패 알림 메일 (운영자 전용)
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
+          subject: "🚨 [수주레이더] 일일 수집 실패 — 풀 누적 점검 필요"
+          to: abcde@xicna.com
+          from: 수주레이더 알림 <${{ secrets.SMTP_USER }}>
+          html_body: |
+            <div style="font-family:-apple-system,'맑은 고딕',sans-serif;max-width:560px;padding:20px;color:#222;line-height:1.6">
+              <h2 style="color:#d73a49;margin-top:0">🚨 일일 RSS 수집 실패</h2>
+              <p>오늘 일일 수집(RSS → 풀 누적)이 실패했습니다. 하루 누락돼도 금요일 리포트는
+                 나머지 날짜로 동작하지만, 연속 실패 시 주간 누락이 커집니다.</p>
+              <div style="background:#fff5f5;padding:14px 18px;border-left:4px solid #d73a49;border-radius:4px;margin:18px 0">
+                <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" style="color:#0969da">실패 run 로그 보기</a>
+              </div>
+              <p style="color:#888;font-size:.85em;margin:0">자동 발송 · run #${{ github.run_number }} · 일일 수집 워크플로</p>
+            </div>

@@ -18,10 +18,16 @@
 
 사용법:
     python scripts/run_weekly.py
+    python scripts/run_weekly.py --merge-pool        # 본 운영: 매일 누적된 RSS 풀 7일 병합
     python scripts/run_weekly.py --period-days 14   # 2주치 (DART 와 맞춤)
     python scripts/run_weekly.py --no-open          # HTML 자동 오픈 안 함
     python scripts/run_weekly.py --skip rss g2b     # 일부 단계 스킵 (디버깅용)
     python scripts/run_weekly.py --skip mfds        # 외부 API 끊긴 환경에서
+
+수집 구조:
+  - 일일: scripts/run_collect.py (매일 RSS 수집·필터 → data/pool 누적). RSS 롤오프 방지.
+  - 금요일: 본 스크립트 --merge-pool (풀 7일 병합 + DART/G2B/MFDS 일괄 + 리포트).
+    DART·나라장터·식약처는 날짜범위 API라 롤오프가 없어 금요일 --days 7 일괄로 충분.
 """
 from __future__ import annotations
 
@@ -115,9 +121,17 @@ def main():
                     help="RSS 매체 tier (1=주요 99개)")
     ap.add_argument("--no-open", action="store_true", help="HTML 자동 오픈 비활성화")
     ap.add_argument("--insecure", action="store_true",
-                    help="SSL 검증 비활성화 (G2B/DART/EAIS/MFDS 회사망에서 SSL 문제 시)")
+                    help="SSL 검증 비활성화 (G2B/DART/MFDS 회사망에서 SSL 문제 시)")
+    ap.add_argument("--merge-pool", action="store_true",
+                    help="매일 누적된 RSS 풀(data/pool)을 7일 병합해 리포트에 사용 "
+                         "(RSS 롤오프 누락 방지). 미지정 시 오늘 하루치만 사용(레거시).")
+    ap.add_argument("--pool-pattern", default="data/pool/rss_{date}.jsonl",
+                    help="RSS 풀 파일 경로 패턴 ('{date}' 포함). --merge-pool 일 때만.")
+    ap.add_argument("--keep-days", type=int, default=10,
+                    help="풀 보관 일수 (그 밖은 정리). --merge-pool 일 때만. 기본 10.")
     ap.add_argument("--skip", nargs="+", default=[],
-                    choices=["rss", "filter", "g2b", "dart", "mfds", "enrich", "report"],
+                    choices=["rss", "filter", "collect", "g2b", "dart", "mfds",
+                             "enrich", "merge", "report"],
                     help="스킵할 단계 (디버깅용)")
     args = ap.parse_args()
 
@@ -136,41 +150,80 @@ def main():
     g2b_raw = f"data/raw/g2b_{today_str}.jsonl"
     dart_raw = f"data/raw/dart_{today_str}.jsonl"
     mfds_raw = f"data/raw/mfds_gmp_{today_str}.jsonl"
+    week_rss = f"data/week/rss_{today_str}.jsonl"  # 풀 7일 병합 결과 (--merge-pool)
+    # 리포트가 읽을 RSS: 병합 모드면 7일 취합본, 아니면 오늘 하루치 필터본(레거시)
+    report_rss = week_rss if args.merge_pool else rss_filtered
 
     py = sys.executable  # 현재 파이썬 인터프리터 (venv 환경 유지)
 
     insecure_flag = ["--insecure"] if args.insecure else []
 
     # 단계 정의: (id, 표시명, cmd) — id 는 --skip 에 사용
-    all_steps = [
-        ("rss",
-         "[1/7] RSS 99개 매체 수집",
-         [py, "-m", "src.stage0_collect.run",
-          "--tier", str(args.tier), "--days", str(args.rss_days)]),
-        ("filter",
-         "[2/7] RSS 키워드 필터 적용",
-         [py, "-m", "src.stage1_filter.run", "--input", rss_raw]),
-        ("g2b",
-         "[3/7] 나라장터 G2B 입찰공고 수집",
-         [py, "-m", "src.stage0_collect.nara", "--days", str(args.g2b_days)] + insecure_flag),
-        ("dart",
-         "[4/7] DART 시설투자 공시 수집",
-         [py, "-m", "src.stage0_collect.dart", "--days", str(args.dart_days)] + insecure_flag),
-        ("mfds",
-         "[5/7] MFDS 의약품 GMP 적합판정 (diff 신규)",
-         [py, "-m", "src.stage0_collect.mfds_gmp"] + insecure_flag),
-        ("enrich",
-         "[6/7] MFDS → industrial_dongs.csv 자동 보강 (idempotent)",
-         [py, "scripts/enrich_dongs_from_mfds.py", "--apply"]),
-        ("report",
-         "[7/7] HTML 통합 리포트 생성",
-         [py, "scripts/daily_report_html.py",
-          "--rss", rss_filtered,
-          "--g2b", g2b_raw,
-          "--dart", dart_raw,
-          "--mfds", mfds_raw,
-          "--period-days", str(args.period_days)]),
-    ]
+    if args.merge_pool:
+        # 본 운영(금요일): 매일 누적된 RSS 풀을 7일 병합해 사용 (롤오프 누락 방지).
+        # RSS 수집·필터·풀 적재는 run_collect 가 한 번에 처리.
+        all_steps = [
+            ("collect",
+             "[1/7] RSS 수집+필터+풀 적재 (run_collect)",
+             [py, "scripts/run_collect.py", "--days", str(args.rss_days),
+              "--tier", str(args.tier), "--keep-days", str(args.keep_days),
+              "--pool-pattern", args.pool_pattern]),
+            ("g2b",
+             "[2/7] 나라장터 G2B 입찰공고 수집",
+             [py, "-m", "src.stage0_collect.nara", "--days", str(args.g2b_days)] + insecure_flag),
+            ("dart",
+             "[3/7] DART 시설투자 공시 수집",
+             [py, "-m", "src.stage0_collect.dart", "--days", str(args.dart_days)] + insecure_flag),
+            ("mfds",
+             "[4/7] MFDS 의약품 GMP 적합판정 (diff 신규)",
+             [py, "-m", "src.stage0_collect.mfds_gmp"] + insecure_flag),
+            ("enrich",
+             "[5/7] MFDS → industrial_dongs.csv 자동 보강 (idempotent)",
+             [py, "scripts/enrich_dongs_from_mfds.py", "--apply"]),
+            ("merge",
+             "[6/7] 주간 RSS 취합 (풀 7일 병합·중복제거)",
+             [py, "scripts/merge_week.py", "--pattern", args.pool_pattern,
+              "--days", str(args.period_days), "--today", today_str, "--out", week_rss]),
+            ("report",
+             "[7/7] HTML 통합 리포트 생성",
+             [py, "scripts/daily_report_html.py",
+              "--rss", report_rss,
+              "--g2b", g2b_raw,
+              "--dart", dart_raw,
+              "--mfds", mfds_raw,
+              "--period-days", str(args.period_days)]),
+        ]
+    else:
+        # 레거시(로컬·단발): 오늘 1회 --days N 수집 → 하루치 필터본으로 리포트.
+        all_steps = [
+            ("rss",
+             "[1/7] RSS 99개 매체 수집",
+             [py, "-m", "src.stage0_collect.run",
+              "--tier", str(args.tier), "--days", str(args.rss_days)]),
+            ("filter",
+             "[2/7] RSS 키워드 필터 적용",
+             [py, "-m", "src.stage1_filter.run", "--input", rss_raw]),
+            ("g2b",
+             "[3/7] 나라장터 G2B 입찰공고 수집",
+             [py, "-m", "src.stage0_collect.nara", "--days", str(args.g2b_days)] + insecure_flag),
+            ("dart",
+             "[4/7] DART 시설투자 공시 수집",
+             [py, "-m", "src.stage0_collect.dart", "--days", str(args.dart_days)] + insecure_flag),
+            ("mfds",
+             "[5/7] MFDS 의약품 GMP 적합판정 (diff 신규)",
+             [py, "-m", "src.stage0_collect.mfds_gmp"] + insecure_flag),
+            ("enrich",
+             "[6/7] MFDS → industrial_dongs.csv 자동 보강 (idempotent)",
+             [py, "scripts/enrich_dongs_from_mfds.py", "--apply"]),
+            ("report",
+             "[7/7] HTML 통합 리포트 생성",
+             [py, "scripts/daily_report_html.py",
+              "--rss", report_rss,
+              "--g2b", g2b_raw,
+              "--dart", dart_raw,
+              "--mfds", mfds_raw,
+              "--period-days", str(args.period_days)]),
+        ]
 
     results: list[tuple[str, bool, float, bool]] = []  # (name, ok, dt, skipped)
     overall_t0 = time.time()

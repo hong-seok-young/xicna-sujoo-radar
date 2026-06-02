@@ -45,7 +45,7 @@ industries:
 # 영업팀 요구사항 (필터 기준)
 business_filters:
   min_amount_billion_krw: 450    # 최소 450억 원
-  max_amount_trillion_krw: 1     # 최대 1조 미만
+  max_amount_trillion_krw: 2     # 최대 2조 미만 (2026-06-02: 1조→2조 상향. 셀트리온 1조2천억급 트로피 프로젝트 포함 목적)
   regions_include:
     - "대한민국"
     - "베트남"

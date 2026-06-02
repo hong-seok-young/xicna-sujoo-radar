@@ -529,7 +529,7 @@ def filter_and_convert(
         )
         if filter_cost and not passes_threshold(cost_man, threshold_man):
             continue
-        # 상한 컷 — 1조+ 는 부지/단지 합산 아티팩트 (거제 ~99만㎡ 등). 영업 타겟(450억~1조) 밖.
+        # 상한 컷 — 2조+ 는 부지/단지 합산 아티팩트 (거제 ~99만㎡ 등). 영업 타겟(450억~2조) 밖.
         if filter_cost and cost_man >= MAX_COST_MAN:
             continue
         art = _to_article(it, location_label, cost_man, category)

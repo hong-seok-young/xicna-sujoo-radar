@@ -28,6 +28,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from src.common.categorize import (  # noqa: E402
     CATEGORY_ORDER, CATEGORY_COLORS, tag as categorize_tag,
 )
+from src.common.scoring import score_opportunity, grade_for  # noqa: E402
 
 KST = timezone(timedelta(hours=9))
 
@@ -2314,6 +2315,113 @@ def render_g2b_card(it: dict, idx: int) -> str:
 </tr>"""
 
 
+_GRADE_COLORS = {"S": "#e8453c", "A": "#f59e0b", "B": "#8a94a6", "C": "#b8bfca"}
+
+
+def _dart_item_score(it: dict) -> dict:
+    """DART 1차 항목 발주가능성 점수 (신규시설투자 + 유형자산취득 공용)."""
+    if _is_dart_asset_acquisition(it):
+        f = _extract_dart_asset_fields(it.get("content") or "")
+        amount = f.get("amount", 0) or 0
+        equity = None  # 자산취득은 '자산총액대비'라 시설투자 자본대비와 의미 달라 미반영
+        site = bool(f.get("target") or f.get("target_name") or f.get("purpose"))
+    else:
+        f = _extract_dart_invest_fields(it.get("content") or "")
+        amount = f.get("amount", 0) or 0
+        raw = f.get("equity_ratio") or ""
+        try:
+            equity = float(raw) if raw else None
+        except ValueError:
+            equity = None
+        site = bool(f.get("invest_target"))
+    return score_opportunity(
+        source="dart1", amount_won=amount, categories=_cats_for(it),
+        is_new=not _is_dart_correction(it), equity_ratio=equity, has_site=site,
+    )
+
+
+def _score_cell(sc: dict) -> str:
+    """발주가능성 점수/등급 테이블 셀 (전 섹션 공통)."""
+    g = sc["grade"]
+    color = _GRADE_COLORS.get(g, "#888")
+    return (f'<td class="score-col" data-score="{sc["score"]}" '
+            f'style="text-align:center;white-space:nowrap;">'
+            f'<span style="font-weight:800;color:{color};font-size:15px;">{sc["score"]}</span>'
+            f'<div style="font-size:10px;font-weight:700;color:{color};letter-spacing:.5px;">{g}</div></td>')
+
+
+# 자이씨앤에이 비시공 영역 — 뉴스 HIGH 에서 강등 (조선/해양플랜트는 조선소 건조물이라 시공 대상 아님)
+_OUT_OF_SCOPE_KEYWORDS = (
+    "FLNG", "부유식 액화", "해양플랜트", "해양설비", "조선소", "LNG운반선",
+    "시추선", "드릴십", "원유운반선", "해상풍력", "송전선로",
+)
+
+# 명확한 '시공' 신호 — 뉴스 HIGH 자격. 이게 없으면 단순 수주/투자/물량/펀드로 보고 강등.
+_CONSTRUCTION_ACTIONS = {
+    "착공", "기공", "신축", "증설", "신설", "준공", "완공", "착수", "확장", "확충",
+}
+
+
+def _news_amount_won(text: str) -> int:
+    """뉴스 본문에서 대표 금액(원) 추정 — '조'/'억' 단위. 부정확하나 규모 가늠용."""
+    won = 0
+    m = re.search(r"(\d+(?:\.\d+)?)\s*조", text)
+    if m:
+        won += int(float(m.group(1)) * 1_000_000_000_000)
+    eoks = [int(e.replace(",", "")) for e in re.findall(r"(\d[\d,]*)\s*억", text)]
+    if eoks:
+        won += max(eoks) * 100_000_000
+    return won
+
+
+def _news_exceeds_cap(text: str, cap_jo: float = 2.0) -> bool:
+    """영업 상한(2조) 초과 — 단일 '조' 표기가 cap 이상."""
+    m = re.search(r"(\d+(?:\.\d+)?)\s*조", text)
+    return bool(m) and float(m.group(1)) >= cap_jo
+
+
+def _news_out_of_scope(it: dict) -> str:
+    """뉴스 HIGH 강등 사유 (영업 범위 밖/시공신호 없음). 해당 없으면 빈 문자열."""
+    text = f"{it.get('title','')} {it.get('content','') or ''}"
+    title = it.get("title", "")
+    # 제목이 비시설성(펀드·지분·실적 등)이면 본문에 '증설' 단어가 섞여도 공사 발주 아님
+    if any(k in title for k in ("펀드", "출자", "지분", "M&A", "실적", "영업이익", "어닝", "수상")):
+        return "비시설 뉴스(펀드/지분/실적 등)"
+    if _news_exceeds_cap(text):
+        return "금액 2조 초과(영업 상한 밖)"
+    if any(k in text for k in _OUT_OF_SCOPE_KEYWORDS):
+        return "조선·해양·송전 등 비시공영역"
+    # 명확한 시공 신호(착공/신축/증설 등) 없는 단순 수주·투자·물량·펀드 → 공사수주 무관 가능성↑
+    actions: list[str] = []
+    for p in (it.get("stage1_matched_patterns") or []):
+        if p.startswith("action:"):
+            actions += p[len("action:"):].split(",")
+    if not any(a in _CONSTRUCTION_ACTIONS for a in actions):
+        return "시공 신호(착공/신축/증설) 없음 — 단순 수주/투자/물량"
+    return ""
+
+
+def _news_score(it: dict, source: str = "news_high") -> dict:
+    """뉴스 항목 발주가능성 점수."""
+    text = f"{it.get('title','')} {it.get('content','') or ''}"
+    patterns = it.get("stage1_matched_patterns") or []
+    is_done = any(("준공" in p or "완공" in p)
+                  for p in patterns if p.startswith("action:"))
+    has_area = any(p.startswith("area:") for p in patterns)
+    return score_opportunity(
+        source=source, amount_won=_news_amount_won(text), categories=_cats_for(it),
+        is_new=True, has_site=has_area, is_done=is_done,
+    )
+
+
+def _dart2_score(it: dict) -> dict:
+    """DART 2차 공급계약 발주가능성 점수 (이미 시공사 확정 — 협력사/경쟁사 동향용)."""
+    return score_opportunity(
+        source="dart2", amount_won=_extract_dart_contract_amount(it),
+        categories=_cats_for(it), is_new=not _is_dart_correction(it), has_site=True,
+    )
+
+
 def render_dart_primary_card(it: dict, idx: int, group: str = "") -> str:
     """DART 1차 시설투자 결정 — 본문 정형필드(투자구분/금액/자본대비/목적/기간)를 열 분리."""
     title_raw = it.get("title", "")
@@ -2411,8 +2519,10 @@ def render_dart_primary_card(it: dict, idx: int, group: str = "") -> str:
     search = (f"{corp} {rpt} {invest_type} {invest_target} {purpose} "
               f"{correction_reason} {amount_label} {' '.join(cats)}")
     group_attr = f' data-group="{group}"' if group else ""
+    score_cell = _score_cell(_dart_item_score(it))
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="dart1"{group_attr} data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
+  {score_cell}
   <td style="white-space:nowrap;font-weight:600;">{_esc(corp)}</td>
   <td style="white-space:nowrap;">{correction_chip}{withdraw_chip}{invest_type_html}</td>
   <td style="text-align:right;white-space:nowrap;{amt_style}">{amount_label}{ratio_html}</td>
@@ -2517,8 +2627,10 @@ def render_dart_asset_card(it: dict, idx: int, group: str = "") -> str:
     search = (f"{corp} {rpt} {target} {target_name} {partner} {purpose} "
               f"{amount_label} {' '.join(cats)}")
     group_attr = f' data-group="{group}"' if group else ""
+    score_cell = _score_cell(_dart_item_score(it))
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="dart1"{group_attr} data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
+  {score_cell}
   <td style="white-space:nowrap;font-weight:600;">{_esc(corp)}</td>
   <td style="white-space:nowrap;">{correction_chip}{withdraw_chip}{target_html}</td>
   <td style="text-align:right;white-space:nowrap;{amt_style}">{amount_label}{ratio_html}</td>
@@ -2614,8 +2726,10 @@ def render_dart_secondary_row(it: dict, idx: int, group: str = "") -> str:
     search = (f"{corp} {rpt} {contract_kind} {contract_name} {partner} "
               f"{area} {amount_label} {' '.join(cats)}")
     group_attr = f' data-group="{group}"' if group else ""
+    score_cell = _score_cell(_dart2_score(it))
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="dart2"{group_attr} data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
+  {score_cell}
   <td style="white-space:nowrap;font-weight:600;">{_esc(corp)}</td>
   <td style="font-size:12px;line-height:1.4;">{contract_html}</td>
   <td style="font-size:12px;">{partner_html}</td>
@@ -2650,9 +2764,11 @@ def render_rss_high_card(reason: str, it: dict, idx: int) -> str:
     patterns = (it.get("stage1_matched_patterns") or [])
     cats = _cats_for(it)
     match_cell = _render_match_cell(patterns, reason, limit=4)
+    score_cell = _score_cell(_news_score(it))
     search = f"{title} {content} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="rss-high" data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
+  {score_cell}
   <td>{src}</td>
   <td>{_render_chips(cats)} <b>{title}</b><div style="margin-top:2px;font-size:11.5px;color:var(--muted);">{_esc(_preview(content, 160))}</div></td>
   <td>{match_cell}</td>
@@ -2815,10 +2931,17 @@ def main():
     rss_classified = []
     for it in rss_items:
         lab, rea = classify_rss(it)
+        # 뉴스 HIGH 정확도 — 영업 범위 밖(조선/해양/2조 초과)이면 MID 강등 (영업팀 요청 2026-06-02)
+        if lab == "HIGH":
+            oos = _news_out_of_scope(it)
+            if oos:
+                lab, rea = "MID", f"HIGH강등 · {oos}"
         rss_classified.append((lab, rea, it))
     rss_high = [(r, it) for l, r, it in rss_classified if l == "HIGH"]
     rss_mid = [(r, it) for l, r, it in rss_classified if l == "MID"]
     rss_low = [(r, it) for l, r, it in rss_classified if l == "LOW"]
+    # 뉴스 HIGH — 발주가능성 점수 내림차순 (영업 우선순위 노출)
+    rss_high.sort(key=lambda ri: _news_score(ri[1])["score"], reverse=True)
 
     # DART 1차 — 신규시설투자등 중 건설 영업 대상만. 선박/항공기/엔진 등 동산 자산 취득은 컷.
     # + 시설투자/자산취득 '철회' 정정공시는 영업 가치 없음 → 별도 컷.
@@ -2834,22 +2957,26 @@ def main():
     # 신규시설투자: 신규 vs 정정 분리 → 투자금액 내림차순
     dart_primary_new = sorted(
         [it for it in dart_invest_items if not _is_dart_correction(it)],
-        key=_dart_invest_amount, reverse=True,
+        key=lambda it: (_dart_item_score(it)["score"], _dart_invest_amount(it)), reverse=True,
     )
     dart_primary_corr = sorted(
         [it for it in dart_invest_items if _is_dart_correction(it)],
-        key=_dart_invest_amount, reverse=True,
+        key=lambda it: (_dart_item_score(it)["score"], _dart_invest_amount(it)), reverse=True,
     )
-    # 유형자산 취득결정: 한 그룹으로 (신규+정정 통합), 취득금액 내림차순
+    # 유형자산 취득결정: 한 그룹으로 (신규+정정 통합), 점수 → 취득금액 내림차순
     dart_primary_asset = sorted(
-        dart_asset_items, key=_dart_asset_amount, reverse=True,
+        dart_asset_items,
+        key=lambda it: (_dart_item_score(it)["score"], _dart_asset_amount(it)), reverse=True,
     )
     # DART 2차 (공급계약체결) — 영업 가치 있으려면 계약금액 500억+. 그 이하는 협력사·하청 소액으로 노이즈.
     dart_secondary_all = [it for it in dart_items if not _is_primary_signal(it)]
     dart_secondary = [it for it in dart_secondary_all
                       if _extract_dart_contract_amount(it) >= DART_CONTRACT_THRESHOLD]
     # 계약금액 큰 순 정렬 (영업 우선순위)
-    dart_secondary.sort(key=_extract_dart_contract_amount, reverse=True)
+    dart_secondary.sort(
+        key=lambda it: (_dart2_score(it)["score"], _extract_dart_contract_amount(it)),
+        reverse=True,
+    )
     dart_secondary_cut = len(dart_secondary_all) - len(dart_secondary)
     # 신규 vs 정정 분리 → 그룹별 금액 내림차순 (DART 1차 패턴과 동일)
     dart_secondary_new = [it for it in dart_secondary if not _is_dart_correction(it)]
@@ -2993,13 +3120,13 @@ def main():
     parts.append(_placeholder("dart1", "DART 1차 시설투자 공시", len(dart_primary) == 0))
     if dart_primary:
         parts.append("""  <table>
-    <thead><tr><th>#</th><th>회사</th><th>구분</th><th style="text-align:right;">투자금액</th><th>투자목적</th><th>투자기간</th><th>공시일</th></tr></thead>
+    <thead><tr><th>#</th><th title="발주가능성 점수 — S 80+ / A 60+ / B 40+ / C">점수</th><th>회사</th><th>구분</th><th style="text-align:right;">투자금액</th><th>투자목적</th><th>투자기간</th><th>공시일</th></tr></thead>
     <tbody>
 """)
         # 신규시설투자등 — 신규 그룹 (최상단)
         if dart_primary_new:
             parts.append(
-                f'<tr class="group-header" data-group="dart1-new"><td colspan="7" '
+                f'<tr class="group-header" data-group="dart1-new"><td colspan="8"'
                 f'style="background:var(--group-new-bg);font-weight:600;color:var(--group-new-fg);'
                 f'padding:10px 12px;border-top:2px solid var(--accent-good);">'
                 f'🆕 신규시설투자 — 신규 ({len(dart_primary_new)}건) · 발주 임박, 영업 1순위</td></tr>\n'
@@ -3010,7 +3137,7 @@ def main():
         if dart_primary_corr:
             base = len(dart_primary_new)
             parts.append(
-                f'<tr class="group-header" data-group="dart1-corr"><td colspan="7" '
+                f'<tr class="group-header" data-group="dart1-corr"><td colspan="8"'
                 f'style="background:var(--group-corr-bg);font-weight:600;color:var(--group-corr-fg);'
                 f'padding:10px 12px;border-top:2px solid var(--accent-warn);">'
                 f'✏️ 신규시설투자 — 정정 ({len(dart_primary_corr)}건) · 기존 공시 변경, 참고 자료</td></tr>\n'
@@ -3021,7 +3148,7 @@ def main():
         if dart_primary_asset:
             base = len(dart_primary_new) + len(dart_primary_corr)
             parts.append(
-                f'<tr class="group-header" data-group="dart1-asset"><td colspan="7" '
+                f'<tr class="group-header" data-group="dart1-asset"><td colspan="8"'
                 f'style="background:var(--info-bg);font-weight:600;color:var(--info-fg);'
                 f'padding:10px 12px;border-top:2px solid var(--info-fg);">'
                 f'🏛️ 유형자산 취득결정 ({len(dart_primary_asset)}건) · 토지·건물·부동산 매입 — 신축/이전 잠재 '
@@ -3041,7 +3168,7 @@ def main():
     parts.append(_placeholder("rss-high", "뉴스 HIGH", len(rss_high) == 0))
     if rss_high:
         parts.append("""  <table>
-    <thead><tr><th>#</th><th>매체</th><th>제목 / 본문</th><th>매칭 키워드</th><th>게시일</th></tr></thead>
+    <thead><tr><th>#</th><th title="발주가능성 점수 — S 80+ / A 60+ / B 40+ / C">점수</th><th>매체</th><th>제목 / 본문</th><th>매칭 키워드</th><th>게시일</th></tr></thead>
     <tbody>
 """)
         for i, (reason, it) in enumerate(rss_high, 1):
@@ -3097,13 +3224,13 @@ def main():
     parts.append(_placeholder("dart2", "DART 2차 공급계약 공시", len(dart_secondary) == 0))
     if dart_secondary:
         parts.append("""  <table>
-    <thead><tr><th>#</th><th>회사</th><th>계약명</th><th>발주처</th><th>지역</th><th style="text-align:right;">계약금액</th><th>계약기간</th><th>공시일</th></tr></thead>
+    <thead><tr><th>#</th><th title="발주가능성 점수 — S 80+ / A 60+ / B 40+ / C">점수</th><th>회사</th><th>계약명</th><th>발주처</th><th>지역</th><th style="text-align:right;">계약금액</th><th>계약기간</th><th>공시일</th></tr></thead>
     <tbody>
 """)
         # 신규 그룹 (위)
         if dart_secondary_new:
             parts.append(
-                f'<tr class="group-header" data-group="dart2-new"><td colspan="8" '
+                f'<tr class="group-header" data-group="dart2-new"><td colspan="9"'
                 f'style="background:var(--group-new-bg);font-weight:600;color:var(--group-new-fg);'
                 f'padding:10px 12px;border-top:2px solid var(--accent-good);">'
                 f'🆕 신규 공급계약 ({len(dart_secondary_new)}건) · 시공사 확정·발주처 식별</td></tr>\n'
@@ -3114,7 +3241,7 @@ def main():
         if dart_secondary_corr:
             base = len(dart_secondary_new)
             parts.append(
-                f'<tr class="group-header" data-group="dart2-corr"><td colspan="8" '
+                f'<tr class="group-header" data-group="dart2-corr"><td colspan="9"'
                 f'style="background:var(--group-corr-bg);font-weight:600;color:var(--group-corr-fg);'
                 f'padding:10px 12px;border-top:2px solid var(--accent-warn);">'
                 f'✏️ 정정 공급계약 ({len(dart_secondary_corr)}건) · 기존 계약 금액·기간 변경</td></tr>\n'

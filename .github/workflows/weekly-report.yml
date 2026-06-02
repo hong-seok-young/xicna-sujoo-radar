@@ -2,9 +2,9 @@ name: 주간 리포트 (자동발송)
 
 on:
   schedule:
-    # 본 운영: 매주 금요일 08:00 KST = 목요일 23:00 UTC
-    # GitHub schedule 5~30분 지연 감안하면 실제 도착 금 08:05~08:30 KST
-    - cron: '0 23 * * 4'
+    # 본 운영: 매주 금요일 07:00 KST = 목요일 22:00 UTC
+    # GitHub schedule 5~30분 지연 감안하면 실제 도착 금 07:05~07:30 KST
+    - cron: '0 22 * * 4'
   workflow_dispatch:
 
 permissions:
@@ -148,7 +148,7 @@ jobs:
                 <li><a href="https://hong-seok-young.github.io/xicna-sujoo-radar/archive/" style="color:#0969da">📂 전체 일자별 아카이브</a></li>
               </ul>
               <hr style="border:none;border-top:1px solid #e0e0e0;margin:24px 0">
-              <p style="color:#888;font-size:.85em;margin:0">자동 발송 · 매주 금요일 08:00 KST · 자이씨앤에이 영업팀 · GitHub Actions</p>
+              <p style="color:#888;font-size:.85em;margin:0">자동 발송 · 매주 금요일 07:00 KST · 자이씨앤에이 영업팀 · GitHub Actions</p>
             </div>
           attachments: ${{ env.ATT_PATH }}
 

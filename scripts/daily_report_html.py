@@ -2384,6 +2384,39 @@ _CONSTRUCTION_ACTIONS = {
     "착공", "기공", "신축", "증설", "신설", "준공", "완공", "착수", "확장", "확충",
 }
 
+# 명백한 비(非)시설 뉴스 — 제목에 이 단어가 있으면 발주가능성 점수 강제 강등(C).
+# 금융·증시·실적 / 사건·사고·법 / 인사·행사·홍보 / 정부지원·국책 → 공장발주와 무관.
+# (카테고리가 우연히 매칭돼 시설점수가 붙는 오탐 방지. 룰 기반이라 영업팀 피드백으로 가감.)
+_NEWS_NOISE_TITLE = (
+    # 금융/증시/주가/자본
+    "비트코인", "코인", "가상자산", "암호화폐", "주가", "상한가", "하한가", "급등", "급락",
+    "코스피", "코스닥", "증시", "시가총액", "공매도", "유상증자", "무상증자", "전환사채",
+    "펀드", "출자", "지분", "M&A", "인수합병",
+    # 실적/회계
+    "실적", "영업이익", "순이익", "어닝", "적자전환", "흑자전환", "자본잠식", "배당",
+    # 사건/사고/법/노사
+    "압수수색", "압색", "참사", "화재", "폭발사고", "붕괴", "파업", "리콜", "소송", "고발",
+    "구속", "기소", "과징금", "담합", "횡령", "배임", "안전점검", "제재",
+    # 인사/행사/홍보/수상
+    "선임", "취임", "사임", "별세", "수상", "간담회", "기자회견", "컨퍼런스", "세미나",
+    "포럼", "전시회", "박람회", "컴퓨텍스",
+    # 정책/예산 (발주가 아닌 정부 지원·국책)
+    "국비", "국책", "보조금",
+    # 거시경제/지표 (공장발주 무관)
+    "성장률", "GDP", "물가", "환율", "금리", "수출입", "무역수지",
+    # 홍보/기념 (창립·주년 등 PR성)
+    "창립", "주년", "출범식",
+)
+
+
+def _news_actions(it: dict) -> list[str]:
+    """stage1 매칭 패턴에서 행동 키워드만 추출 (action:착공,증설 → ['착공','증설'])."""
+    acts: list[str] = []
+    for p in (it.get("stage1_matched_patterns") or []):
+        if p.startswith("action:"):
+            acts += p[len("action:"):].split(",")
+    return acts
+
 
 def _news_amount_won(text: str) -> int:
     """뉴스 본문에서 대표 금액(원) 추정 — '조'/'억' 단위. 부정확하나 규모 가늠용."""
@@ -2407,34 +2440,54 @@ def _news_out_of_scope(it: dict) -> str:
     """뉴스 HIGH 강등 사유 (영업 범위 밖/시공신호 없음). 해당 없으면 빈 문자열."""
     text = f"{it.get('title','')} {it.get('content','') or ''}"
     title = it.get("title", "")
-    # 제목이 비시설성(펀드·지분·실적 등)이면 본문에 '증설' 단어가 섞여도 공사 발주 아님
-    if any(k in title for k in ("펀드", "출자", "지분", "M&A", "실적", "영업이익", "어닝", "수상")):
-        return "비시설 뉴스(펀드/지분/실적 등)"
+    # 제목이 명백한 비시설성(금융·실적·사건·인사·행사·국책 등)이면 본문에 '증설'이 섞여도 공사발주 아님
+    if any(k in title for k in _NEWS_NOISE_TITLE):
+        return "비시설 뉴스(금융·실적·사건·인사·행사 등)"
     if _news_exceeds_cap(text):
         return "금액 2조 초과(영업 상한 밖)"
     if any(k in text for k in _OUT_OF_SCOPE_KEYWORDS):
         return "조선·해양·송전 등 비시공영역"
     # 명확한 시공 신호(착공/신축/증설 등) 없는 단순 수주·투자·물량·펀드 → 공사수주 무관 가능성↑
-    actions: list[str] = []
-    for p in (it.get("stage1_matched_patterns") or []):
-        if p.startswith("action:"):
-            actions += p[len("action:"):].split(",")
-    if not any(a in _CONSTRUCTION_ACTIONS for a in actions):
+    if not any(a in _CONSTRUCTION_ACTIONS for a in _news_actions(it)):
         return "시공 신호(착공/신축/증설) 없음 — 단순 수주/투자/물량"
     return ""
 
 
 def _news_score(it: dict, source: str = "news_high") -> dict:
-    """뉴스 항목 발주가능성 점수."""
-    text = f"{it.get('title','')} {it.get('content','') or ''}"
+    """뉴스 항목 발주가능성 점수 (오탐 게이팅 포함).
+
+    오탐 방지 2단:
+      1) 제목이 명백한 비시설 뉴스(_NEWS_NOISE_TITLE: 비트코인·주가·실적·압수수색·
+         전시회·국비 등) → 시설/규모 무효화 + C(<=25) 강등.
+      2) 시설 적합도(카테고리)는 '실제 프로젝트' 정황이 있을 때만 인정 —
+         시공행동(착공/증설 등)·금액·면적 중 하나라도 있어야 함. 카테고리만 우연히
+         매칭된 분석·칼럼 기사는 시설점수 0 (base+규모미상 수준으로 떨어짐).
+    """
+    title = it.get("title", "") or ""
+    text = f"{title} {it.get('content','') or ''}"
     patterns = it.get("stage1_matched_patterns") or []
     is_done = any(("준공" in p or "완공" in p)
                   for p in patterns if p.startswith("action:"))
     has_area = any(p.startswith("area:") for p in patterns)
-    return score_opportunity(
-        source=source, amount_won=_news_amount_won(text), categories=_cats_for(it),
-        is_new=True, has_site=has_area, is_done=is_done,
+    has_action = any(a in _CONSTRUCTION_ACTIONS for a in _news_actions(it))
+    amount = _news_amount_won(text)
+    # 하드 제외 — 영업 범위 밖이면 무조건 C 강등 (시설/규모 점수 무효화):
+    #   ① 비시설 노이즈 제목(금융·실적·사건·인사·행사·국책)
+    #   ② 금액 2조 초과(영업 상한 밖)  ③ 조선·해양플랜트·송전 등 비시공영역
+    is_hard_oos = (any(k in title for k in _NEWS_NOISE_TITLE)
+                   or _news_exceeds_cap(text)
+                   or any(k in text for k in _OUT_OF_SCOPE_KEYWORDS))
+    # 시공행동/금액/면적이 하나라도 있어야 '실제 시설 프로젝트'로 보고 카테고리 점수 인정
+    corroborated = has_action or amount > 0 or has_area
+    cats = _cats_for(it) if (corroborated and not is_hard_oos) else []
+    sc = score_opportunity(
+        source=source, amount_won=(0 if is_hard_oos else amount), categories=cats,
+        is_new=True, has_site=(has_area and not is_hard_oos), is_done=is_done,
     )
+    if is_hard_oos:
+        capped = min(sc["score"], 25)  # 영업 범위 밖은 무조건 C
+        return {"score": capped, "grade": grade_for(capped), "breakdown": sc["breakdown"]}
+    return sc
 
 
 def _dart2_score(it: dict) -> dict:

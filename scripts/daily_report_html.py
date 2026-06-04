@@ -2415,6 +2415,12 @@ _NEWS_NOISE_RE = re.compile(
     r"|\d+\s*%\s*(성장|증가|감소|급증|급감|돌파)"
 )
 
+# 매크로 아티팩트 가드 (2026-06-04): '2조 비즈니스 상한'은 제거했지만, 뉴스 본문 자유텍스트는
+# 국가예산("에너지전환 39조")·해외펀딩·시장규모 같은 매크로 수치를 규모로 잘못 집어올 수 있다.
+# 단일 공사 프로젝트는 현실적으로 10조를 안 넘으므로, 그 이상은 매크로로 보고 컷한다.
+# (DART 시설투자 등 정형 금액엔 적용 안 함 — 거긴 10조+도 실제 메가프로젝트.)
+_NEWS_MACRO_CEIL_WON = 10 * 1_000_000_000_000  # 10조
+
 
 def _news_actions(it: dict) -> list[str]:
     """stage1 매칭 패턴에서 행동 키워드만 추출 (action:착공,증설 → ['착공','증설'])."""
@@ -2426,10 +2432,10 @@ def _news_actions(it: dict) -> list[str]:
 
 
 def _news_amount_won(text: str) -> int:
-    """뉴스 본문 대표 금액(원) 추정 — '조'/'억' 표기 중 가장 큰 단일 값.
+    """뉴스 본문 대표 금액(원) 추정 — '조'/'억' 표기 중 가장 큰 단일 값 (규모 점수용).
 
-    (이전: '첫 조 + 최대 억' 합산 → '1조…최대 4조' 본문이 1.x조로 과소집계돼
-     2조 초과 판정을 빠져나갔음. max 방식으로 교정.)
+    (이전: '첫 조 + 최대 억' 합산 → '1조…최대 4조' 본문이 1.x조로 과소집계됐음. max 로 교정.)
+    금액 상한(2조) 컷은 2026-06-04 영업팀 요청으로 제거 — 큰 프로젝트일수록 큰 기회.
     """
     vals: list[float] = []
     for m in re.finditer(r"(\d+(?:\.\d+)?)\s*조", text):
@@ -2442,11 +2448,6 @@ def _news_amount_won(text: str) -> int:
     return int(max(vals)) if vals else 0
 
 
-def _news_exceeds_cap(text: str, cap_jo: float = 2.0) -> bool:
-    """영업 상한(2조) 초과 — 본문 최대 단일 금액이 cap 이상."""
-    return _news_amount_won(text) >= int(cap_jo * 1_000_000_000_000)
-
-
 def _news_out_of_scope(it: dict) -> str:
     """뉴스 HIGH 강등 사유 (영업 범위 밖/시공신호 없음). 해당 없으면 빈 문자열."""
     text = f"{it.get('title','')} {it.get('content','') or ''}"
@@ -2454,8 +2455,8 @@ def _news_out_of_scope(it: dict) -> str:
     # 제목이 명백한 비시설성(금융·실적·사건·인사·행사·국책 등)이면 본문에 '증설'이 섞여도 공사발주 아님
     if any(k in title for k in _NEWS_NOISE_TITLE) or _NEWS_NOISE_RE.search(title):
         return "비시설 뉴스(금융·실적·사건·인사·행사 등)"
-    if _news_exceeds_cap(text):
-        return "금액 2조 초과(영업 상한 밖)"
+    if _news_amount_won(text) >= _NEWS_MACRO_CEIL_WON:
+        return "국가예산·매크로 규모(10조+) — 단일 공사 아님"
     if any(k in text for k in _OUT_OF_SCOPE_KEYWORDS):
         return "조선·해양·송전 등 비시공영역"
     # 명확한 시공 신호(착공/신축/증설 등) 없는 단순 수주·투자·물량·펀드 → 공사수주 무관 가능성↑
@@ -2484,10 +2485,12 @@ def _news_score(it: dict, source: str = "news_high") -> dict:
     amount = _news_amount_won(text)
     # 하드 제외 — 영업 범위 밖이면 무조건 C 강등 (시설/규모 점수 무효화):
     #   ① 비시설 노이즈 제목(금융·실적·사건·인사·행사·국책)
-    #   ② 금액 2조 초과(영업 상한 밖)  ③ 조선·해양플랜트·송전 등 비시공영역
+    #   ② 조선·해양플랜트·송전 등 비시공영역
+    #   ③ 10조+ = 국가예산·해외펀딩·시장규모 매크로 아티팩트 (단일 공사 아님)
+    # (2조 비즈니스 상한은 2026-06-04 제거 — 큰 프로젝트일수록 큰 기회. 10조 가드만 유지)
     is_hard_oos = (any(k in title for k in _NEWS_NOISE_TITLE)
                    or _NEWS_NOISE_RE.search(title)
-                   or _news_exceeds_cap(text)
+                   or amount >= _NEWS_MACRO_CEIL_WON
                    or any(k in text for k in _OUT_OF_SCOPE_KEYWORDS))
     # 시공행동/금액/면적이 하나라도 있어야 '실제 시설 프로젝트'로 보고 카테고리 점수 인정
     corroborated = has_action or amount > 0 or has_area
@@ -3160,7 +3163,7 @@ def main():
     rss_classified = []
     for it in rss_items:
         lab, rea = classify_rss(it)
-        # 뉴스 HIGH 정확도 — 영업 범위 밖(조선/해양/2조 초과)이면 MID 강등 (영업팀 요청 2026-06-02)
+        # 뉴스 HIGH 정확도 — 영업 범위 밖(조선/해양·비시설 노이즈)이면 MID 강등 (영업팀 요청)
         if lab == "HIGH":
             oos = _news_out_of_scope(it)
             if oos:

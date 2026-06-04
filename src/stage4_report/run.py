@@ -50,14 +50,18 @@ def apply_business_filters(articles: list) -> list:
     """영업팀 비즈니스 필터 (금액 450억~1조, 지역)."""
     cfg = industries()["business_filters"]
     min_amount = cfg["min_amount_billion_krw"]
-    max_amount = cfg["max_amount_trillion_krw"] * 10000  # 1조 = 10000억
+    # 상한(max_amount_trillion_krw) 은 null 이면 무제한 (2026-06-04 영업팀 요청으로 제거).
+    _max_cfg = cfg.get("max_amount_trillion_krw")
+    max_amount = _max_cfg * 10000 if _max_cfg else None  # 1조 = 10000억, None=상한 없음
     regions = cfg["regions_include"]
 
     filtered = []
     for a in articles:
         ext = a.stage3_extracted or {}
         amount = ext.get("amount_billion_krw")
-        if amount is not None and not (min_amount <= amount < max_amount):
+        if amount is not None and (
+            amount < min_amount or (max_amount is not None and amount >= max_amount)
+        ):
             continue
         # 지역 필터는 location 문자열에 키워드 포함 여부로 (느슨하게)
         loc = ext.get("location") or ""

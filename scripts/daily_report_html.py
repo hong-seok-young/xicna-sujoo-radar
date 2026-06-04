@@ -291,7 +291,7 @@ def classify_rss(item: dict) -> tuple[str, str]:
     has_explicit_future = any(k in text for k in EXPLICIT_FUTURE_CONSTRUCTION)
 
     # 카테고리 '기타' = 산업키워드 0개. HIGH 자격 박탈 (산업 매칭 없으면 무조건 강등).
-    cats = _cats_for(item)
+    cats = _news_cats(item)
     has_industry_category = bool(cats) and cats != ["기타"]
 
     if has_strong_action and has_strong_target and (has_money or has_area) and not is_noisy and has_industry_category:
@@ -2406,6 +2406,8 @@ _NEWS_NOISE_TITLE = (
     "성장률", "GDP", "물가", "환율", "금리", "수출입", "무역수지",
     # 홍보/기념 (창립·주년 등 PR성)
     "창립", "주년", "출범식",
+    # 의견·정책 기사 (칼럼·사설·약가 등 — 발주 아님)
+    "칼럼", "사설", "기고", "오피니언", "약가",
 )
 
 # 실적/매출 기사 패턴 — 단어 하나로는 못 잡는 '매출 N% 성장', 'N% 증가' 등 (제목 대상).
@@ -2420,6 +2422,43 @@ _NEWS_NOISE_RE = re.compile(
 # 단일 공사 프로젝트는 현실적으로 10조를 안 넘으므로, 그 이상은 매크로로 보고 컷한다.
 # (DART 시설투자 등 정형 금액엔 적용 안 함 — 거긴 10조+도 실제 메가프로젝트.)
 _NEWS_MACRO_CEIL_WON = 10 * 1_000_000_000_000  # 10조
+
+# 데이터센터는 '제목'에 명시될 때만 시설로 인정 — 본문에 납품처로만 언급된(ESS·장비 공급) 오분류 방지.
+_DC_TITLE_RE = re.compile(r"데이터센터|IDC|하이퍼스케일|코로케이션|전산센터|클라우드데이터")
+
+
+def _news_cats(it: dict) -> list[str]:
+    """뉴스 전용 카테고리 — 데이터센터는 제목 매칭일 때만 인정 (DART엔 미적용)."""
+    cats = _cats_for(it)
+    if "데이터센터" in cats and not _DC_TITLE_RE.search(it.get("title", "") or ""):
+        cats = [c for c in cats if c != "데이터센터"]
+    return cats or ["기타"]
+
+
+# ── 타 건설사 수주/낙찰 = 시공사 이미 확정 → 자이 영업 불가('뺏긴 건', 경쟁사 동향) ──
+# 발주가능성(우리가 수주할 가능성) 관점에서 0 에 가까우므로 강등. DART 2차(공급계약)와 같은 논리.
+_CONTRACTOR_NAMES = (
+    "삼성물산", "현대건설", "현대엔지니어링", "GS건설", "지에스건설", "대우건설",
+    "DL이앤씨", "디엘이앤씨", "DL건설", "포스코이앤씨", "롯데건설",
+    "HDC현대산업개발", "현대산업개발", "SK에코플랜트", "호반건설", "금호건설",
+    "태영건설", "두산건설", "계룡건설", "동부건설", "코오롱글로벌", "한신공영",
+    "중흥토건", "서희건설", "쌍용건설", "삼성E&A", "삼성이앤에이", "한양건설",
+)
+_AWARDED_RE = re.compile(
+    r"(신축|건설|건축|토목|플랜트|리모델링|증축|정비)\s*공사.{0,6}(수주|낙찰|도급|수의계약)"
+    r"|공사\s*(수주|낙찰)"
+    r"|시공권\s*확보|시공사\s*(선정|확정)|턴키\s*(수주|계약)|EPC\s*(수주|계약)"
+)
+
+
+def _news_competitor_win(it: dict) -> bool:
+    """타 건설사가 이미 수주/낙찰 = 시공사 확정 → 우리 영업 기회 아님."""
+    title = it.get("title", "") or ""
+    if _AWARDED_RE.search(title):
+        return True
+    if any(c in title for c in _CONTRACTOR_NAMES) and re.search(r"수주|낙찰|시공|도급|착공|준공", title):
+        return True
+    return False
 
 
 def _news_actions(it: dict) -> list[str]:
@@ -2459,6 +2498,8 @@ def _news_out_of_scope(it: dict) -> str:
         return "국가예산·매크로 규모(10조+) — 단일 공사 아님"
     if any(k in text for k in _OUT_OF_SCOPE_KEYWORDS):
         return "조선·해양·송전 등 비시공영역"
+    if _news_competitor_win(it):
+        return "타 건설사 수주/낙찰 — 시공사 확정(우리 영업 불가)"
     # 명확한 시공 신호(착공/신축/증설 등) 없는 단순 수주·투자·물량·펀드 → 공사수주 무관 가능성↑
     if not any(a in _CONSTRUCTION_ACTIONS for a in _news_actions(it)):
         return "시공 신호(착공/신축/증설) 없음 — 단순 수주/투자/물량"
@@ -2484,17 +2525,19 @@ def _news_score(it: dict, source: str = "news_high") -> dict:
     has_action = any(a in _CONSTRUCTION_ACTIONS for a in _news_actions(it))
     amount = _news_amount_won(text)
     # 하드 제외 — 영업 범위 밖이면 무조건 C 강등 (시설/규모 점수 무효화):
-    #   ① 비시설 노이즈 제목(금융·실적·사건·인사·행사·국책)
+    #   ① 비시설 노이즈 제목(금융·실적·사건·인사·행사·국책·칼럼·약가)
     #   ② 조선·해양플랜트·송전 등 비시공영역
     #   ③ 10조+ = 국가예산·해외펀딩·시장규모 매크로 아티팩트 (단일 공사 아님)
+    #   ④ 타 건설사 수주/낙찰 = 시공사 확정 → 우리 영업 불가('뺏긴 건')
     # (2조 비즈니스 상한은 2026-06-04 제거 — 큰 프로젝트일수록 큰 기회. 10조 가드만 유지)
     is_hard_oos = (any(k in title for k in _NEWS_NOISE_TITLE)
                    or _NEWS_NOISE_RE.search(title)
                    or amount >= _NEWS_MACRO_CEIL_WON
-                   or any(k in text for k in _OUT_OF_SCOPE_KEYWORDS))
+                   or any(k in text for k in _OUT_OF_SCOPE_KEYWORDS)
+                   or _news_competitor_win(it))
     # 시공행동/금액/면적이 하나라도 있어야 '실제 시설 프로젝트'로 보고 카테고리 점수 인정
     corroborated = has_action or amount > 0 or has_area
-    cats = _cats_for(it) if (corroborated and not is_hard_oos) else []
+    cats = _news_cats(it) if (corroborated and not is_hard_oos) else []
     sc = score_opportunity(
         source=source, amount_won=(0 if is_hard_oos else amount), categories=cats,
         is_new=True, has_site=(has_area and not is_hard_oos), is_done=is_done,
@@ -2897,7 +2940,7 @@ def render_rss_high_card(reason: str, it: dict, idx: int) -> str:
     content = it.get("content", "") or ""
     url = _esc(it.get("url", ""))
     patterns = (it.get("stage1_matched_patterns") or [])
-    cats = _cats_for(it)
+    cats = _news_cats(it)
     match_cell = _render_match_cell(patterns, reason, limit=4)
     score_cell = _score_cell(_news_score(it))
     search = f"{title} {content} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
@@ -2917,7 +2960,7 @@ def render_rss_mid_row(reason: str, it: dict, idx: int) -> str:
     published = (it.get("published_at", "") or "")[:10]
     patterns = (it.get("stage1_matched_patterns") or [])
     url = _esc(it.get("url", ""))
-    cats = _cats_for(it)
+    cats = _news_cats(it)
     match_cell = _render_match_cell(patterns, reason, limit=3)
     score_cell = _score_cell(_news_score(it, "news_mid"))
     search = f"{title} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
@@ -2937,7 +2980,7 @@ def render_rss_low_row(reason: str, it: dict, idx: int) -> str:
     published = (it.get("published_at", "") or "")[:10]
     url = _esc(it.get("url", ""))
     patterns = (it.get("stage1_matched_patterns") or [])
-    cats = _cats_for(it)
+    cats = _news_cats(it)
     match_cell = _render_match_cell(patterns, reason, limit=3)
     score_cell = _score_cell(_news_score(it, "news_low"))
     search = f"{title} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
@@ -2978,7 +3021,7 @@ def _collect_scored(dart_invest: list, dart_asset: list,
         text = f"{it.get('title','')} {it.get('content','') or ''}"
         out.append({"score": sc["score"], "grade": sc["grade"], "src": "뉴스 HIGH",
                     "corp": _preview(it.get("title", ""), 40), "proj": "",
-                    "cats": _cats_for(it), "amount": _news_amount_won(text), "url": it.get("url", "")})
+                    "cats": _news_cats(it), "amount": _news_amount_won(text), "url": it.get("url", "")})
     for it in dart_secondary:
         sc = _dart2_score(it)
         out.append({"score": sc["score"], "grade": sc["grade"], "src": "DART 2차",

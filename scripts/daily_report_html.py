@@ -2408,6 +2408,13 @@ _NEWS_NOISE_TITLE = (
     "창립", "주년", "출범식",
 )
 
+# 실적/매출 기사 패턴 — 단어 하나로는 못 잡는 '매출 N% 성장', 'N% 증가' 등 (제목 대상).
+# 투자/발주가 아닌 회계 성과 기사 → 발주가능성 점수 강등.
+_NEWS_NOISE_RE = re.compile(
+    r"매출.{0,8}(성장|증가|감소|돌파|기록|급증|급감|역성장)"
+    r"|\d+\s*%\s*(성장|증가|감소|급증|급감|돌파)"
+)
+
 
 def _news_actions(it: dict) -> list[str]:
     """stage1 매칭 패턴에서 행동 키워드만 추출 (action:착공,증설 → ['착공','증설'])."""
@@ -2419,21 +2426,25 @@ def _news_actions(it: dict) -> list[str]:
 
 
 def _news_amount_won(text: str) -> int:
-    """뉴스 본문에서 대표 금액(원) 추정 — '조'/'억' 단위. 부정확하나 규모 가늠용."""
-    won = 0
-    m = re.search(r"(\d+(?:\.\d+)?)\s*조", text)
-    if m:
-        won += int(float(m.group(1)) * 1_000_000_000_000)
-    eoks = [int(e.replace(",", "")) for e in re.findall(r"(\d[\d,]*)\s*억", text)]
-    if eoks:
-        won += max(eoks) * 100_000_000
-    return won
+    """뉴스 본문 대표 금액(원) 추정 — '조'/'억' 표기 중 가장 큰 단일 값.
+
+    (이전: '첫 조 + 최대 억' 합산 → '1조…최대 4조' 본문이 1.x조로 과소집계돼
+     2조 초과 판정을 빠져나갔음. max 방식으로 교정.)
+    """
+    vals: list[float] = []
+    for m in re.finditer(r"(\d+(?:\.\d+)?)\s*조", text):
+        vals.append(float(m.group(1)) * 1_000_000_000_000)
+    for m in re.finditer(r"(\d[\d,]*)\s*억", text):
+        try:
+            vals.append(int(m.group(1).replace(",", "")) * 100_000_000)
+        except ValueError:
+            pass
+    return int(max(vals)) if vals else 0
 
 
 def _news_exceeds_cap(text: str, cap_jo: float = 2.0) -> bool:
-    """영업 상한(2조) 초과 — 단일 '조' 표기가 cap 이상."""
-    m = re.search(r"(\d+(?:\.\d+)?)\s*조", text)
-    return bool(m) and float(m.group(1)) >= cap_jo
+    """영업 상한(2조) 초과 — 본문 최대 단일 금액이 cap 이상."""
+    return _news_amount_won(text) >= int(cap_jo * 1_000_000_000_000)
 
 
 def _news_out_of_scope(it: dict) -> str:
@@ -2441,7 +2452,7 @@ def _news_out_of_scope(it: dict) -> str:
     text = f"{it.get('title','')} {it.get('content','') or ''}"
     title = it.get("title", "")
     # 제목이 명백한 비시설성(금융·실적·사건·인사·행사·국책 등)이면 본문에 '증설'이 섞여도 공사발주 아님
-    if any(k in title for k in _NEWS_NOISE_TITLE):
+    if any(k in title for k in _NEWS_NOISE_TITLE) or _NEWS_NOISE_RE.search(title):
         return "비시설 뉴스(금융·실적·사건·인사·행사 등)"
     if _news_exceeds_cap(text):
         return "금액 2조 초과(영업 상한 밖)"
@@ -2475,6 +2486,7 @@ def _news_score(it: dict, source: str = "news_high") -> dict:
     #   ① 비시설 노이즈 제목(금융·실적·사건·인사·행사·국책)
     #   ② 금액 2조 초과(영업 상한 밖)  ③ 조선·해양플랜트·송전 등 비시공영역
     is_hard_oos = (any(k in title for k in _NEWS_NOISE_TITLE)
+                   or _NEWS_NOISE_RE.search(title)
                    or _news_exceeds_cap(text)
                    or any(k in text for k in _OUT_OF_SCOPE_KEYWORDS))
     # 시공행동/금액/면적이 하나라도 있어야 '실제 시설 프로젝트'로 보고 카테고리 점수 인정

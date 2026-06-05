@@ -2408,6 +2408,15 @@ _NEWS_NOISE_TITLE = (
     "창립", "주년", "출범식",
     # 의견·정책 기사 (칼럼·사설·약가 등 — 발주 아님)
     "칼럼", "사설", "기고", "오피니언", "약가",
+    # === 2026-06-05 증시 테마·수혜주 hype (주식 기사 — 공장발주 아님) ===
+    "수혜주", "관련주", "테마주", "대장주", "급등주", "유망주",
+    "수혜 기업", "수혜기업", "로봇주", "들썩",
+    # 칼럼·기획 시리즈 (제목 머리 대괄호) — 분석·전망 기사
+    "[포커스", "[차이나", "[심층", "[집중분석", "[기획", "[이슈",
+    "[르포", "패권전쟁",
+    # 정치·정책 연재 / 시황·분석 칼럼 (산업 언급해도 발주 아님)
+    "[이재명", "[윤석열", "[AI 생태계", "생태계 전쟁", "밸류체인 한계",
+    "밖에 없", "잭팟", "수혜 기대", "기대 만발", "사업 순항", "순항 중",
 )
 
 # 실적/매출 기사 패턴 — 단어 하나로는 못 잡는 '매출 N% 성장', 'N% 증가' 등 (제목 대상).
@@ -2443,6 +2452,8 @@ _CONTRACTOR_NAMES = (
     "HDC현대산업개발", "현대산업개발", "SK에코플랜트", "호반건설", "금호건설",
     "태영건설", "두산건설", "계룡건설", "동부건설", "코오롱글로벌", "한신공영",
     "중흥토건", "서희건설", "쌍용건설", "삼성E&A", "삼성이앤에이", "한양건설",
+    # 2026-06-05 추가 — DART2 공급계약 신고자로 등장한 타 건설사 (경쟁사 수주 동향)
+    "KCC건설", "특수건설", "우원개발", "일성건설", "신세계건설", "동부엔지니어링",
 )
 _AWARDED_RE = re.compile(
     r"(신축|건설|건축|토목|플랜트|리모델링|증축|정비)\s*공사.{0,6}(수주|낙찰|도급|수의계약)"
@@ -2535,8 +2546,18 @@ def _news_score(it: dict, source: str = "news_high") -> dict:
                    or amount >= _NEWS_MACRO_CEIL_WON
                    or any(k in text for k in _OUT_OF_SCOPE_KEYWORDS)
                    or _news_competitor_win(it))
-    # 시공행동/금액/면적이 하나라도 있어야 '실제 시설 프로젝트'로 보고 카테고리 점수 인정
-    corroborated = has_action or amount > 0 or has_area
+    # 시설 적합도(카테고리=시설점수)는 '실제 시설 프로젝트' 정황이 있을 때만 인정한다 (2026-06-05).
+    #   ① 강한 시설 명사(공장/플랜트/팹/데이터센터 등 STRONG_TARGETS)가 제목·본문에 있고
+    #   ② 시공행동·금액·면적 중 하나라도 동반될 것.
+    # 산업만 언급한 칼럼·시황·정책 기사("[이재명 정부] 관세협상", "반도체 수출 1조弗")는
+    # 강한 시설 명사가 없어 facility 0 → base+규모 수준(대개 C)으로 떨어진다.
+    # (시설 명사 없이 금액 토큰만으로 CR 시설점수 30이 붙어 칼럼이 A급에 오르던 오탐 차단.)
+    has_strong_target = any(
+        t in STRONG_TARGETS
+        for p in patterns if p.startswith("target:")
+        for t in p[len("target:"):].split(",")
+    )
+    corroborated = has_strong_target and (has_action or amount > 0 or has_area)
     cats = _news_cats(it) if (corroborated and not is_hard_oos) else []
     sc = score_opportunity(
         source=source, amount_won=(0 if is_hard_oos else amount), categories=cats,
@@ -2548,12 +2569,24 @@ def _news_score(it: dict, source: str = "news_high") -> dict:
     return sc
 
 
+def _dart2_competitor_gc(it: dict) -> bool:
+    """DART2 공급계약 신고자가 타 건설사 = 경쟁사가 이미 시공 수주 → 우리 영업 기회 아님.
+    (장비·소재 공급사의 공급계약은 발주처가 시설을 짓는다는 동향 신호라 유지하지만,
+     건설사 본인의 공급계약은 그 공사를 경쟁사가 가져간 것이므로 동향용 C로 강등.)"""
+    corp = _dart_corp(it)
+    return any(c in corp for c in _CONTRACTOR_NAMES)
+
+
 def _dart2_score(it: dict) -> dict:
     """DART 2차 공급계약 발주가능성 점수 (이미 시공사 확정 — 협력사/경쟁사 동향용)."""
-    return score_opportunity(
+    sc = score_opportunity(
         source="dart2", amount_won=_extract_dart_contract_amount(it),
         categories=_cats_for(it), is_new=not _is_dart_correction(it), has_site=True,
     )
+    if _dart2_competitor_gc(it):
+        capped = min(sc["score"], 30)  # 경쟁 건설사 수주 — 시공 확정, C 동향용
+        return {"score": capped, "grade": grade_for(capped), "breakdown": sc["breakdown"]}
+    return sc
 
 
 def _mfds_company_revenue(bssh: str) -> int:
@@ -2932,8 +2965,8 @@ def _render_match_cell(patterns, reason: str, limit: int = 4) -> str:
     return "".join(parts) or '<span style="color:var(--muted);">—</span>'
 
 
-def render_rss_high_card(reason: str, it: dict, idx: int) -> str:
-    """RSS HIGH 뉴스 — 한 행짜리 표 row."""
+def render_rss_high_card(reason: str, it: dict, idx: int, source: str = "news_high") -> str:
+    """RSS HIGH 뉴스 — 한 행짜리 표 row. source=분류에서 정한 base 출처(점수 일관성)."""
     title = _esc(it.get("title", ""))
     src = _esc(it.get("source", ""))
     published = (it.get("published_at", "") or "")[:10]
@@ -2942,7 +2975,7 @@ def render_rss_high_card(reason: str, it: dict, idx: int) -> str:
     patterns = (it.get("stage1_matched_patterns") or [])
     cats = _news_cats(it)
     match_cell = _render_match_cell(patterns, reason, limit=4)
-    score_cell = _score_cell(_news_score(it))
+    score_cell = _score_cell(_news_score(it, source))
     search = f"{title} {content} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="rss-high" data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
@@ -2954,7 +2987,7 @@ def render_rss_high_card(reason: str, it: dict, idx: int) -> str:
 </tr>"""
 
 
-def render_rss_mid_row(reason: str, it: dict, idx: int) -> str:
+def render_rss_mid_row(reason: str, it: dict, idx: int, source: str = "news_mid") -> str:
     title = _esc(it.get("title", ""))
     src = _esc(it.get("source", ""))
     published = (it.get("published_at", "") or "")[:10]
@@ -2962,7 +2995,7 @@ def render_rss_mid_row(reason: str, it: dict, idx: int) -> str:
     url = _esc(it.get("url", ""))
     cats = _news_cats(it)
     match_cell = _render_match_cell(patterns, reason, limit=3)
-    score_cell = _score_cell(_news_score(it, "news_mid"))
+    score_cell = _score_cell(_news_score(it, source))
     search = f"{title} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="rss-mid" data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
@@ -2974,7 +3007,7 @@ def render_rss_mid_row(reason: str, it: dict, idx: int) -> str:
 </tr>"""
 
 
-def render_rss_low_row(reason: str, it: dict, idx: int) -> str:
+def render_rss_low_row(reason: str, it: dict, idx: int, source: str = "news_low") -> str:
     title = _esc(it.get("title", ""))
     src = _esc(it.get("source", ""))
     published = (it.get("published_at", "") or "")[:10]
@@ -2982,7 +3015,7 @@ def render_rss_low_row(reason: str, it: dict, idx: int) -> str:
     patterns = (it.get("stage1_matched_patterns") or [])
     cats = _news_cats(it)
     match_cell = _render_match_cell(patterns, reason, limit=3)
-    score_cell = _score_cell(_news_score(it, "news_low"))
+    score_cell = _score_cell(_news_score(it, source))
     search = f"{title} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="rss-low" data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
@@ -3004,9 +3037,15 @@ def _dart_corp(it: dict) -> str:
     return t
 
 
+def _news_source_for(label: str) -> str:
+    """classify_rss 섹션 라벨 → score_opportunity base 출처. (점수의 base 일관성용.)"""
+    return {"HIGH": "news_high", "MID": "news_mid", "LOW": "news_low"}.get(label, "news_mid")
+
+
 def _collect_scored(dart_invest: list, dart_asset: list,
                     rss_high: list, dart_secondary: list) -> list[dict]:
-    """전 섹션 항목을 발주가능성 점수로 통합 — 상단 대시보드(KPI/TOP10)용."""
+    """전 섹션 항목을 발주가능성 점수로 통합 — 상단 대시보드(KPI/TOP10)용.
+    rss_high 는 (reason, it, source) 3-튜플 (등급 S/A 뉴스)."""
     out: list[dict] = []
     for it in dart_invest + dart_asset:
         sc = _dart_item_score(it)
@@ -3016,8 +3055,8 @@ def _collect_scored(dart_invest: list, dart_asset: list,
         out.append({"score": sc["score"], "grade": sc["grade"], "src": "DART 1차",
                     "corp": _dart_corp(it), "proj": f.get("invest_target") or f.get("purpose") or "",
                     "cats": _cats_for(it), "amount": amt, "url": it.get("url", "")})
-    for _reason, it in rss_high:
-        sc = _news_score(it)
+    for _reason, it, _src in rss_high:
+        sc = _news_score(it, _src)
         text = f"{it.get('title','')} {it.get('content','') or ''}"
         out.append({"score": sc["score"], "grade": sc["grade"], "src": "뉴스 HIGH",
                     "corp": _preview(it.get("title", ""), 40), "proj": "",
@@ -3053,8 +3092,10 @@ def render_dashboard(scored: list[dict]) -> str:
         + '</div>'
     )
 
+    # TOP10 은 영업 우선순위 리더보드 — C급(노이즈·준공·경쟁사 동향)은 제외하고 S/A/B만.
+    top = [x for x in scored if x["grade"] != "C"][:10]
     rows = ""
-    for i, x in enumerate(scored[:10], 1):
+    for i, x in enumerate(top, 1):
         color = _GRADE_COLORS.get(x["grade"], "#888")
         proj = (f'<div style="font-size:11.5px;color:var(--muted);">{_esc(_preview(x["proj"], 46))}</div>'
                 if x["proj"] else "")
@@ -3203,23 +3244,28 @@ def main():
     else:
         actual_label = period_label
 
-    rss_classified = []
+    # 분류(classify_rss)는 base 출처(신호 강도)만 정하고, 노출 섹션은 '최종 발주가능성 등급'이
+    # 결정한다 (2026-06-05). 이전엔 섹션=classify, 점수=score_opportunity 가 따로 놀아
+    # "HIGH인데 C점", "LOW인데 A점" 모순이 났고, 진짜 리드(에어리퀴드 등)가 MID/LOW에 묻혔다.
+    # 이제 S/A→HIGH, B→MID, C→LOW 로 섹션과 등급을 일치시킨다.
+    rss_scored = []  # (reason, it, source, score_dict)
     for it in rss_items:
         lab, rea = classify_rss(it)
-        # 뉴스 HIGH 정확도 — 영업 범위 밖(조선/해양·비시설 노이즈)이면 MID 강등 (영업팀 요청)
+        # 영업 범위 밖(조선/해양·비시설 노이즈)이면 base 를 news_mid 로 낮춤 (HIGH base 박탈)
         if lab == "HIGH":
             oos = _news_out_of_scope(it)
             if oos:
                 lab, rea = "MID", f"HIGH강등 · {oos}"
-        rss_classified.append((lab, rea, it))
-    rss_high = [(r, it) for l, r, it in rss_classified if l == "HIGH"]
-    rss_mid = [(r, it) for l, r, it in rss_classified if l == "MID"]
-    rss_low = [(r, it) for l, r, it in rss_classified if l == "LOW"]
-    # 뉴스 HIGH/MID/LOW — 발주가능성 점수 내림차순 (영업 우선순위 노출).
+        source = _news_source_for(lab)
+        rss_scored.append((rea, it, source, _news_score(it, source)))
+    rss_high = [(r, it, s) for r, it, s, sc in rss_scored if sc["grade"] in ("S", "A")]
+    rss_mid = [(r, it, s) for r, it, s, sc in rss_scored if sc["grade"] == "B"]
+    rss_low = [(r, it, s) for r, it, s, sc in rss_scored if sc["grade"] == "C"]
+    # 각 섹션 내부 — 발주가능성 점수 내림차순 (영업 우선순위 노출).
     # 동점은 stable sort 라 직전 published_at 내림차순(최신 먼저)이 유지됨.
-    rss_high.sort(key=lambda ri: _news_score(ri[1], "news_high")["score"], reverse=True)
-    rss_mid.sort(key=lambda ri: _news_score(ri[1], "news_mid")["score"], reverse=True)
-    rss_low.sort(key=lambda ri: _news_score(ri[1], "news_low")["score"], reverse=True)
+    rss_high.sort(key=lambda ri: _news_score(ri[1], ri[2])["score"], reverse=True)
+    rss_mid.sort(key=lambda ri: _news_score(ri[1], ri[2])["score"], reverse=True)
+    rss_low.sort(key=lambda ri: _news_score(ri[1], ri[2])["score"], reverse=True)
 
     # DART 1차 — 신규시설투자등 중 건설 영업 대상만. 선박/항공기/엔진 등 동산 자산 취득은 컷.
     # + 시설투자/자산취득 '철회' 정정공시는 영업 가치 없음 → 별도 컷.
@@ -3266,7 +3312,7 @@ def main():
     cat_counts: Counter[str] = Counter()
     all_items_for_cat = (
         g2b_items + eais_items + dart_primary + dart_secondary + mfds_items
-        + [it for _, it in rss_high] + [it for _, it in rss_mid] + [it for _, it in rss_low]
+        + [it for _, it, _ in rss_high] + [it for _, it, _ in rss_mid] + [it for _, it, _ in rss_low]
     )
     for it in all_items_for_cat:
         for c in _cats_for(it):
@@ -3453,8 +3499,8 @@ def main():
     <thead><tr><th>#</th><th title="발주가능성 점수 — S 80+ / A 60+ / B 40+ / C">점수</th><th>매체</th><th>제목 / 본문</th><th>매칭 키워드</th><th>게시일</th></tr></thead>
     <tbody>
 """)
-        for i, (reason, it) in enumerate(rss_high, 1):
-            parts.append(render_rss_high_card(reason, it, i))
+        for i, (reason, it, source) in enumerate(rss_high, 1):
+            parts.append(render_rss_high_card(reason, it, i, source))
         parts.append("    </tbody></table>")
 
     # === MFDS GMP (DART 2차 위로 이동 — 사용자 우선순위 조정) ===
@@ -3544,8 +3590,8 @@ def main():
     <thead><tr><th>#</th><th title="발주가능성 점수 — S 80+ / A 60+ / B 40+ / C">점수</th><th>매체</th><th>제목</th><th>매칭 키워드</th><th>게시일</th></tr></thead>
     <tbody>
 """)
-        for i, (reason, it) in enumerate(rss_mid, 1):
-            parts.append(render_rss_mid_row(reason, it, i))
+        for i, (reason, it, source) in enumerate(rss_mid, 1):
+            parts.append(render_rss_mid_row(reason, it, i, source))
         parts.append("    </tbody></table>")
 
     # === RSS LOW ===
@@ -3559,8 +3605,8 @@ def main():
     <thead><tr><th>#</th><th title="발주가능성 점수 — S 80+ / A 60+ / B 40+ / C">점수</th><th>매체</th><th>제목</th><th>매칭 키워드</th><th>게시일</th></tr></thead>
     <tbody>
 """)
-        for i, (reason, it) in enumerate(rss_low, 1):
-            parts.append(render_rss_low_row(reason, it, i))
+        for i, (reason, it, source) in enumerate(rss_low, 1):
+            parts.append(render_rss_low_row(reason, it, i, source))
         parts.append("    </tbody></table>")
 
     # === G2B (관급 — 영업 대상 아님, 기본 접힘. 페이지 맨 아래로 배치) ===

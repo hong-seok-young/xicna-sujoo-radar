@@ -139,6 +139,9 @@ jobs:
           echo "  첨부 파일: $ATT_NAME ($(stat -c%s "data/$ATT_NAME") bytes)"
 
       - name: Send email — 짧은 안내 + 첨부파일 (본문 인라인 X)
+        # 정기 스케줄(금 07:00)에서만 영업팀 발송. 수동 재실행(workflow_dispatch)은
+        # docs/Pages 갱신만 하고 메일은 안 보냄 — 보고서 수정본 재발행 시 중복메일 방지.
+        if: github.event_name == 'schedule'
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com

@@ -98,3 +98,72 @@ def test_news_targets_parse():
     it = _it("t", "c", ["action:증설,투자", "target:공장,후공정", "money:1조"])
     assert R._news_targets(it) == ["공장", "후공정"]
     assert R._news_actions(it) == ["증설", "투자"]
+
+
+# ── 이벤트 단위 중복제거 ─────────────────────────────────────────────────────
+
+def _row(title, content="", patterns=None, source="news_high"):
+    return ("", {"title": title, "content": content, "url": "http://x/" + title[:6],
+                 "source": "x.com", "stage1_matched_patterns": patterns or []}, source)
+
+
+def _key(title, content=""):
+    it = {"title": title, "content": content}
+    return (R._dedup_title_tokens(title), R._dedup_topic_sig(it))
+
+
+def test_dedup_topic_sig_honam_cluster():
+    """삼성·SK 호남 반도체 공장 = 제목에 플레이어+지역+산업+시설 모두 → 토픽 시그니처."""
+    it = {"title": "삼성·SK하이닉스, 호남 반도체 공장 검토…비수도권 투자 속도", "content": ""}
+    assert R._dedup_topic_sig(it) == ("호남권", "반도체", frozenset({"삼성", "SK"}))
+
+
+def test_dedup_topic_sig_none_for_other_company():
+    """앰코는 대형 플레이어 목록에 없음 → 토픽 시그니처 없음(호남 클러스터에 안 묶임)."""
+    it = {"title": "앰코, 광주에 1조 투자 검토…반도체 후공정 공장 증설", "content": ""}
+    assert R._dedup_topic_sig(it) is None
+
+
+def test_dedup_topic_sig_none_when_industry_absent_in_title():
+    """제목에 산업(반도체)이 없으면 토픽 시그니처 없음 — 같은 회사·지역의 다른 사건과 안 묶임."""
+    it = {"title": "청주 SK하이닉스서 화학물질 접촉사고…작업자 2명 병원 이송", "content": ""}
+    assert R._dedup_topic_sig(it) is None
+
+
+def test_dedup_merges_near_identical_titles():
+    """통신사 받아쓰기 등 거의 동일한 제목 → 같은 사안."""
+    ka = _key("가온전선, 美 생성형 AI 데이터센터에 버스덕트 첫 공급")
+    kb = _key("가온전선, 미국 생성형 AI 데이터센터에 ‘버스덕트’ 공급")
+    assert R._dedup_same_event(ka, kb) is True
+
+
+def test_dedup_does_not_merge_distinct_leads():
+    """앰코(광주 후공정)와 삼성·SK 호남 클러스터는 다른 건 → 병합 금지."""
+    assert R._dedup_same_event(
+        _key("앰코, 광주에 1조 투자 검토…반도체 후공정 공장 증설"),
+        _key("삼성·SK하이닉스, 호남 반도체 공장 검토"),
+    ) is False
+
+
+def test_dedup_does_not_merge_different_events_same_company():
+    """같은 회사(SK)라도 사고 vs 양산은 다른 사건 → 병합 금지."""
+    assert R._dedup_same_event(
+        _key("청주 SK하이닉스서 화학물질 접촉사고"),
+        _key("하이닉스, 연말 375단 낸드 양산…몰리브덴 첫 도입"),
+    ) is False
+
+
+def test_dedup_sections_collapse_and_preserve():
+    """호남 클러스터 3건은 대표 1건(+2 dups)으로 접히고, 앰코는 별도 유지."""
+    high = [
+        _row("삼성·SK하이닉스, 호남 반도체 공장 검토", patterns=["target:공장"]),
+        _row("삼성전자 반도체 공장 호남으로…정부 회의 개최", patterns=["target:공장"]),
+        _row("전남도, 삼성·SK에 호남 반도체 클러스터 구축 촉구", patterns=["target:공장"]),
+        _row("앰코, 광주 반도체 후공정 공장 증설", patterns=["action:증설", "target:공장"]),
+    ]
+    H, _Mi, _Lo = R._dedup_news_sections(high, [], [])
+    titles = [it["title"] for _, it, _ in H]
+    assert len(H) == 2                               # 호남 대표 1 + 앰코 1
+    assert any("앰코" in t for t in titles)           # 앰코 보존(별도)
+    honam = [it for _, it, _ in H if "앰코" not in it["title"]][0]
+    assert len(honam.get("_dups", [])) == 2          # 나머지 2건은 dups 로 보존(정보 유지)

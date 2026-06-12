@@ -3103,12 +3103,12 @@ def render_rss_high_card(reason: str, it: dict, idx: int, source: str = "news_hi
     cats = _news_cats(it)
     match_cell = _render_match_cell(patterns, reason, limit=4)
     score_cell = _score_cell(_news_score(it, source))
-    search = f"{title} {content} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
+    search = f"{title} {content} {src} {reason} {' '.join(patterns)} {' '.join(cats)} {_dups_search_extra(it)}"
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="rss-high" data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
   {score_cell}
   <td>{src}</td>
-  <td>{_render_chips(cats)} <b>{title}</b><div style="margin-top:2px;font-size:11.5px;color:var(--muted);">{_esc(_preview(content, 160))}</div></td>
+  <td>{_render_chips(cats)} <b>{title}</b><div style="margin-top:2px;font-size:11.5px;color:var(--muted);">{_esc(_preview(content, 160))}</div>{_dups_badge(it)}</td>
   <td>{match_cell}</td>
   <td style="white-space:nowrap;">{published}</td>
 </tr>"""
@@ -3123,12 +3123,12 @@ def render_rss_mid_row(reason: str, it: dict, idx: int, source: str = "news_mid"
     cats = _news_cats(it)
     match_cell = _render_match_cell(patterns, reason, limit=3)
     score_cell = _score_cell(_news_score(it, source))
-    search = f"{title} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
+    search = f"{title} {src} {reason} {' '.join(patterns)} {' '.join(cats)} {_dups_search_extra(it)}"
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="rss-mid" data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
   {score_cell}
   <td>{src}</td>
-  <td>{_render_chips(cats)} {title}</td>
+  <td>{_render_chips(cats)} {title}{_dups_badge(it)}</td>
   <td>{match_cell}</td>
   <td style="white-space:nowrap;">{published}</td>
 </tr>"""
@@ -3143,15 +3143,136 @@ def render_rss_low_row(reason: str, it: dict, idx: int, source: str = "news_low"
     cats = _news_cats(it)
     match_cell = _render_match_cell(patterns, reason, limit=3)
     score_cell = _score_cell(_news_score(it, source))
-    search = f"{title} {src} {reason} {' '.join(patterns)} {' '.join(cats)}"
+    search = f"{title} {src} {reason} {' '.join(patterns)} {' '.join(cats)} {_dups_search_extra(it)}"
     return f"""<tr data-filterable data-fav-id="{_esc(it.get('id') or it.get('url') or '')}" data-fav-title="{_esc(it.get('title',''))}" data-section-id="rss-low" data-url="{url}" data-search="{_esc(search)}" data-categories="{_esc(','.join(cats))}">
   <td class="num-col">{idx}</td>
   {score_cell}
   <td>{src}</td>
-  <td>{_render_chips(cats)} {title}</td>
+  <td>{_render_chips(cats)} {title}{_dups_badge(it)}</td>
   <td>{match_cell}</td>
   <td style="white-space:nowrap;">{published}</td>
 </tr>"""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 이벤트 단위 중복제거 (2026-06-12) — 같은 사안의 매체별 중복을 대표 1건으로.
+#
+# 같은 url(id)은 상류에서 이미 제거됨. 여기선 '다른 매체/다른 기사, 같은 사안'을 묶는다.
+#   ① 제목 근접(Jaccard≥0.6) = 통신사 받아쓰기 등 거의 동일한 기사
+#   ② 토픽 클러스터 = (대형 플레이어 교집합)+(지역권)+(산업)+(시설) 모두 일치할 때만.
+#      — 앰코(광주·반도체)가 삼성·SK 호남 클러스터에 잘못 묶이지 않도록 '플레이어' 를 키에 포함.
+# 정보는 안 버린다 — 대표 행에 it['_dups'] 로 붙여 접이식 노출(재현율 보존).
+# ─────────────────────────────────────────────────────────────────────────────
+_DEDUP_TITLE_STRIP = re.compile(r"\[[^\]]*\]|\([^)]*\)|&[a-z]+;|&#\d+;|[\"'“”‘’…·,~/|?!]")
+_DEDUP_STOP = {"속보", "단독", "종합", "영상", "포토", "그래픽", "기자", "美", "中", "日",
+               "韓", "EU", "및", "위해", "관련", "대한", "왜", "이유", "전망", "고조"}
+
+
+def _dedup_title_tokens(title: str) -> frozenset:
+    t = _DEDUP_TITLE_STRIP.sub(" ", html.unescape(title or ""))
+    return frozenset(w.lower() for w in t.split() if len(w) >= 2 and w not in _DEDUP_STOP)
+
+
+# 대형 플레이어 — 메가 시설을 짓는 주체. 토픽 클러스터 키에 포함해 '회사가 다른' 건 안 묶음.
+_DEDUP_PLAYERS = (
+    ("삼성", r"삼성전자|삼전|삼성"),
+    ("SK", r"SK하이닉스|하이닉스|하닉|닉스|SK"),
+    ("LG", r"LG에너지|LG전자|LG디스플|LG유플|LG"),
+    ("현대", r"현대차|현대자동차|현대모비스|기아"),
+    ("포스코", r"포스코"),
+    ("한화", r"한화"),
+    ("롯데", r"롯데"),
+    ("엔비디아", r"엔비디아|NVIDIA"),
+)
+_DEDUP_REGIONS = (
+    ("호남권", r"호남|광주|전남|전북|군산|새만금|장성|나주"),
+    ("충청권", r"충청|충북|충남|청주|천안|아산|대전|세종|음성|진천"),
+    ("수도권", r"수도권|경기|파주|평택|용인|이천|화성|안성|시흥|인천|송도"),
+    ("영남권", r"영남|경북|경남|구미|포항|울산|대구|부산|창원|밀양"),
+    ("강원권", r"강원|원주|춘천|강릉|동해"),
+)
+_DEDUP_INDUSTRY = (
+    ("반도체", r"반도체|파운드리|패키징|후공정|전공정|HBM|D램|낸드|소부장"),
+    ("데이터센터", r"데이터센터|IDC|AIDC|하이퍼스케일"),
+    ("이차전지", r"이차전지|배터리|양극재|음극재|전해질|분리막"),
+    ("바이오", r"바이오의약|제약바이오|백신|원료의약품|CDMO"),
+    ("디스플레이", r"디스플레이|OLED|LCD"),
+)
+_DEDUP_FACILITY = re.compile(r"공장|플랜트|팹|클러스터|산업단지|단지|생산기지|생산시설|데이터센터")
+
+
+def _dedup_topic_sig(it: dict):
+    """대형 플레이어+지역권+산업+시설 토픽 시그니처. None 이면 토픽 병합 대상 아님.
+
+    제목(title)에서만 잡는다 — 본문까지 보면 'SK하이닉스 충청권 반도체' 처럼 회사·지역
+    존재만 같아도 사고·양산·임단협 같은 서로 다른 사건이 한 덩어리로 묶이는 과병합 발생.
+    토픽 클러스터는 헤드라인이 명시적으로 '플레이어+지역+산업+시설' 일 때만 인정한다.
+    """
+    title = it.get("title", "") or ""
+    players = frozenset(n for n, p in _DEDUP_PLAYERS if re.search(p, title))
+    region = next((n for n, p in _DEDUP_REGIONS if re.search(p, title)), None)
+    industry = next((n for n, p in _DEDUP_INDUSTRY if re.search(p, title)), None)
+    if players and region and industry and _DEDUP_FACILITY.search(title):
+        return (region, industry, players)
+    return None
+
+
+def _dedup_jaccard(a: frozenset, b: frozenset) -> float:
+    return len(a & b) / len(a | b) if (a and b) else 0.0
+
+
+def _dedup_same_event(ka, kb) -> bool:
+    (ta, sa), (tb, sb) = ka, kb
+    if _dedup_jaccard(ta, tb) >= 0.6:            # 거의 동일한 기사 (통신사 받아쓰기 등)
+        return True
+    if sa and sb:                                 # 토픽: 지역·산업 동일 + 플레이어 교집합
+        (ra, ia, pa), (rb, ib, pb) = sa, sb
+        if ra == rb and ia == ib and (pa & pb):
+            return True
+    return False
+
+
+def _dedup_news_sections(high: list, mid: list, low: list):
+    """전 뉴스 섹션을 합쳐 같은 사안을 대표 1건으로 접고 등급(섹션)대로 재분배.
+    대표 = 최고점 항목, 나머지는 대표 it['_dups'] 에 보존(접이식 노출)."""
+    tagged = ([("high",) + r for r in high]
+              + [("mid",) + r for r in mid]
+              + [("low",) + r for r in low])
+    tagged.sort(key=lambda t: _news_score(t[2], t[3])["score"], reverse=True)
+    reps, keys = [], []
+    for tag, reason, it, source in tagged:
+        k = (_dedup_title_tokens(it.get("title", "")), _dedup_topic_sig(it))
+        hit = next((i for i, rk in enumerate(keys) if _dedup_same_event(k, rk)), -1)
+        if hit >= 0:
+            reps[hit][2].setdefault("_dups", []).append(it)
+        else:
+            reps.append((tag, reason, it, source))
+            keys.append(k)
+    buckets = {"high": [], "mid": [], "low": []}
+    for tag, reason, it, source in reps:
+        buckets[tag].append((reason, it, source))
+    return buckets["high"], buckets["mid"], buckets["low"]
+
+
+def _dups_badge(it: dict) -> str:
+    """대표 행에 '같은 사안 보도 N건' 접이식 — 매체·제목·링크 보존."""
+    dups = it.get("_dups") or []
+    if not dups:
+        return ""
+    rows = []
+    for d in dups[:15]:
+        durl, dmed, dttl = _esc(d.get("url", "")), _esc(d.get("source", "") or ""), _esc(d.get("title", ""))
+        link = f'<a href="{durl}" target="_blank" style="color:var(--link);">{dmed or "원문"}</a>' if durl else (dmed or "")
+        rows.append(f'<div style="margin:2px 0;">· {link} <span style="color:var(--muted);">{dttl}</span></div>')
+    more = f'<div style="color:var(--muted);">… 외 {len(dups) - 15}건</div>' if len(dups) > 15 else ""
+    return (f'<details style="margin-top:4px;font-size:11px;">'
+            f'<summary style="color:var(--link);cursor:pointer;">📰 같은 사안 보도 {len(dups)}건 더보기</summary>'
+            f'<div style="margin-top:3px;">{"".join(rows)}{more}</div></details>')
+
+
+def _dups_search_extra(it: dict) -> str:
+    """접힌 중복기사 제목을 대표 행 검색문에 합쳐 텍스트 검색에서 누락 안 되게."""
+    return " ".join(d.get("title", "") for d in (it.get("_dups") or []))
 
 
 def _dart_corp(it: dict) -> str:
@@ -3393,6 +3514,8 @@ def main():
     rss_high.sort(key=lambda ri: _news_score(ri[1], ri[2])["score"], reverse=True)
     rss_mid.sort(key=lambda ri: _news_score(ri[1], ri[2])["score"], reverse=True)
     rss_low.sort(key=lambda ri: _news_score(ri[1], ri[2])["score"], reverse=True)
+    # 같은 사안의 매체별 중복 → 대표 1건으로 접기 (TOP10·렌더 모두 적용. 정보는 _dups 로 보존)
+    rss_high, rss_mid, rss_low = _dedup_news_sections(rss_high, rss_mid, rss_low)
 
     # DART 1차 — 신규시설투자등 중 건설 영업 대상만. 선박/항공기/엔진 등 동산 자산 취득은 컷.
     # + 시설투자/자산취득 '철회' 정정공시는 영업 가치 없음 → 별도 컷.

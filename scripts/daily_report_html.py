@@ -2379,10 +2379,106 @@ _OUT_OF_SCOPE_KEYWORDS = (
     "시추선", "드릴십", "원유운반선", "해상풍력", "송전선로",
 )
 
-# 명확한 '시공' 신호 — 뉴스 HIGH 자격. 이게 없으면 단순 수주/투자/물량/펀드로 보고 강등.
-_CONSTRUCTION_ACTIONS = {
-    "착공", "기공", "신축", "증설", "신설", "준공", "완공", "착수", "확장", "확충",
-}
+# ─────────────────────────────────────────────────────────────────────────────
+# 시공 신호 판정 (2026-06-12 정밀화) — "유효 리드는 살리고 노이즈만 강등"
+#
+# 문제: 기존엔 `확장`·`확충` 을 무조건 시공으로 인정 → "사업 확장"·"동맹 확장"·
+#   "전담법인 설립" 같은 비(非)시설 기사(특히 젠슨 황 방한發 AI협력 보도)가 HIGH 유입.
+#   그렇다고 단순 삭제하면 "생산능력 확충"·"단지 조성" 같은 진짜 리드까지 죽는다.
+# 해법: 동사를 STRONG(단독 인정) / WEAK(시설명사 동반 시만 인정) 으로 나누고,
+#   어휘는 오히려 넓혀(조성/구축/건립/설립/부지 등) 재현율을 높인다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# STRONG 동사 — 물리적 착공/건립이 거의 확실. action 토큰에 있으면 단독 인정.
+# (`증설` 은 "…증설은 아니다" 부정문 오탐이 잦아 STRONG 에서 빼고 WEAK+시설명사+부정가드로 처리)
+_CON_STRONG_TOKENS = ("착공", "기공", "기공식", "신축", "증축", "준공", "완공", "착수", "건립")
+_CON_NEG_RE = re.compile(r"아니|않|없|무산|백지화|보류|취소")
+# WEAK 동사 — 시설명사가 함께 있을 때만 시공으로 인정
+# ("법인 설립"·"AI 인프라 구축"·"투자 유치" 단독은 시설 아님)
+# `확장`·`확충` 은 "영토/사업/연구/생태계 확장" 비유가 많아 제외 — 진짜 캐파 증설은 _CAPACITY_RE 로 처리.
+_CON_VERB_WEAK = ("신설", "증설", "건립", "건설", "조성", "구축", "설립",
+                  "투자", "유치", "부지", "토지", "입주")
+# 생산 캐파 증설 — '영토/사업 확장' 비유와 달리 명백한 시설 신호 (유한양행 '생산능력 확충' 등).
+_CAPACITY_RE = re.compile(
+    r"(생산|양산|제조|공급)\s?(능력|설비|라인|시설|규모|역량|캐파|capa)\s*[^\s]{0,6}"
+    r"(확충|확대|증설|증강|확장|구축|신설|투자)")
+# 시설 명사 — WEAK 동사의 코로보레이션 (생산설비 계열을 STRONG_TARGETS 보다 넓게).
+_FACILITY_NOUN_RE = re.compile(
+    r"공장|플랜트|팹|FAB|클린룸|생산라인|생산능력|생산시설|생산기지|생산설비|제조시설|"
+    r"제조라인|양산라인|설비투자|시설투자|단지|산업단지|캠퍼스|사옥|연구단지|연구소|"
+    r"연구원|데이터센터|IDC|물류센터|물류창고|패키징|후공정|전공정|GMP|CDMO|백신공장|"
+    r"완제공장|원료의약품|양극재|음극재|분리막|전해질")
+# AI·기술 '협력/동맹/회동' PR 헤드라인 — 건물 발주 아님. WEAK 경로를 차단(→MID).
+# (STRONG 동사가 있으면 영향 없음 — "엔비디아, OO에 데이터센터 착공"은 그대로 HIGH)
+_PR_HEADLINE_RE = re.compile(
+    r"동맹|회동|맞손|방한|간담|업무협약|전략적\s*파트너|파트너십|협업|"
+    r"협력\s*(강화|확대|방안|논의)|공동\s*개발|로드맵|젠슨\s*황|엔비디아|NVIDIA")
+
+# 부품·소재·장비·전선 '공급/납품' 주체 = 시설 소유주/시공사 아님 → 발주처 동향(HIGH 아님).
+# (가온전선 '버스덕트 공급', 한미반도체 '본더 공급' 등. 본인이 공장을 짓는 기사는 예외 유지.)
+_SUPPLIER_GOODS_RE = re.compile(
+    r"버스덕트|부스덕트|전선|케이블|변압기|배전반|수배전|차단기|전력기기|개폐기|"
+    r"다이본더|본더|식각장비|증착장비|노광장비|검사장비|계측장비|테스트장비|"
+    r"특수가스|산업가스|블랭크마스크|포토레지스트|레지스트|컨베이어|호이스트")
+_SUPPLY_VERB_RE = re.compile(r"공급|납품")
+_OWN_BUILD_RE = re.compile(
+    r"(착공|기공|신축|증축|증설|신설|건립|건설).{0,12}(공장|플랜트|팹|클린룸|단지|센터|사옥)"
+    r"|(공장|플랜트|팹|클린룸|단지|센터|사옥).{0,12}(착공|기공|신축|증축|증설|신설|건립|건설)")
+
+
+def _news_targets(it: dict) -> list[str]:
+    """stage1 매칭 패턴에서 대상(시설) 키워드만 추출 (target:공장,후공정 → ['공장','후공정'])."""
+    out: list[str] = []
+    for p in (it.get("stage1_matched_patterns") or []):
+        if p.startswith("target:"):
+            out += p[len("target:"):].split(",")
+    return out
+
+
+def _news_construction_signal(it: dict) -> bool:
+    """기사에 '실제 시설 시공' 신호가 있는가 (뉴스 HIGH 자격). 없으면 시장동향(MID).
+
+    자유 본문 스캔은 긴 기사에서 동사·명사가 우연히 따로 등장해 오탐이 많다. 그래서
+    stage1 이 이미 근접 패턴매칭으로 뽑은 **action/target 토큰** + **제목** + **근접 동시출현**
+    만 신뢰한다.
+    """
+    title = it.get("title", "") or ""
+    text = f"{title} {it.get('content', '') or ''}"
+    acts = _news_actions(it)
+    tgts = _news_targets(it)
+    # ① STRONG 동사가 action 토큰에 있음 → 단독 인정 (앰코 '증설' 은 ②/③ 에서 처리)
+    if any(v in acts for v in _CON_STRONG_TOKENS):
+        return True
+    # ② 시공동사+시설명사가 본문에 '근접 동시출현' (proximity) — 단 직후 부정어 제외
+    m = _OWN_BUILD_RE.search(text)
+    if m and not _CON_NEG_RE.search(text[m.end():m.end() + 8]):
+        return True
+    # ③ '생산능력/생산라인 확충·증설' = 진짜 캐파 증설 (단, '영토/사업/연구 확장' 비유 제외)
+    cap = _CAPACITY_RE.search(text)
+    if cap and not _CON_NEG_RE.search(text[cap.end():cap.end() + 6]):
+        return True
+    # ④ WEAK 동사(토큰) + 시설명사(제목 or stage1 target) — AI협력 PR·부정문 제외
+    weak_hits = [v for v in _CON_VERB_WEAK if v in acts]
+    if weak_hits and not _PR_HEADLINE_RE.search(title):
+        fac = (bool(_FACILITY_NOUN_RE.search(title))
+               or any(t in STRONG_TARGETS for t in tgts)
+               or any(_FACILITY_NOUN_RE.search(t) for t in tgts))
+        negated = any(re.search(re.escape(v) + r".{0,4}(아니|않|없)", text) for v in weak_hits)
+        if fac and not negated:
+            return True
+    return False
+
+
+def _news_is_component_supplier(it: dict) -> bool:
+    """부품·소재·장비·전선 공급사의 '공급/납품' PR (시설 발주처 아님 → HIGH 박탈).
+    본인이 공장을 짓는 기사(제목에 '공장 착공/증설' 등)면 공급사 아님 → 리드 유지.
+    (예외 판정을 본문이 아닌 '제목' 으로 — 본문의 고객사 '데이터센터 증설' 언급이 면제로
+     오인되던 버그 교정: 가온전선 '버스덕트 공급' 본문 '데이터센터 증설' → 공급사 맞음.)"""
+    title = it.get("title", "") or ""
+    text = f"{title} {it.get('content', '') or ''}"
+    if _SUPPLIER_GOODS_RE.search(title) and _SUPPLY_VERB_RE.search(text):
+        return not _OWN_BUILD_RE.search(title)
+    return False
 
 # 명백한 비(非)시설 뉴스 — 제목에 이 단어가 있으면 발주가능성 점수 강제 강등(C).
 # 금융·증시·실적 / 사건·사고·법 / 인사·행사·홍보 / 정부지원·국책 → 공장발주와 무관.
@@ -2417,6 +2513,11 @@ _NEWS_NOISE_TITLE = (
     # 정치·정책 연재 / 시황·분석 칼럼 (산업 언급해도 발주 아님)
     "[이재명", "[윤석열", "[AI 생태계", "생태계 전쟁", "밸류체인 한계",
     "밖에 없", "잭팟", "수혜 기대", "기대 만발", "사업 순항", "순항 중",
+    # === 2026-06-12 추가 — 노사/시상/칼럼/거시 (시공 발주 무관) ===
+    "임단협", "임금협상", "단체협약", "노사", "파업",          # 노사 이슈
+    "어워즈", "시상", "시상식", "수상자",                       # 시상·행사
+    "객석", "월요객석", "(월요", "(데스크", "[데스크", "[기자",  # 칼럼·사설류
+    "AX 가속", "대전환 못하면", "영토 확장",                    # AI전환 트렌드/비유 헤드라인
 )
 
 # 실적/매출 기사 패턴 — 단어 하나로는 못 잡는 '매출 N% 성장', 'N% 증가' 등 (제목 대상).
@@ -2424,6 +2525,7 @@ _NEWS_NOISE_TITLE = (
 _NEWS_NOISE_RE = re.compile(
     r"매출.{0,8}(성장|증가|감소|돌파|기록|급증|급감|역성장)"
     r"|\d+\s*%\s*(성장|증가|감소|급증|급감|돌파)"
+    r"|수출.{0,10}(억\s*弗|억\s*달러|억弗|찍나|돌파|역대)"   # 수출 실적·통계 (반도체 수출 3500억弗 등)
 )
 
 # 매크로 아티팩트 가드 (2026-06-04): '2조 비즈니스 상한'은 제거했지만, 뉴스 본문 자유텍스트는
@@ -2486,11 +2588,27 @@ def _news_amount_won(text: str) -> int:
 
     (이전: '첫 조 + 최대 억' 합산 → '1조…최대 4조' 본문이 1.x조로 과소집계됐음. max 로 교정.)
     금액 상한(2조) 컷은 2026-06-04 영업팀 요청으로 제거 — 큰 프로젝트일수록 큰 기회.
+
+    2026-06-12: '수주/수출/매출/시장/잔고' 문맥의 금액은 공사 규모가 아니라 회사의 매출·
+    수주잔고·시장규모 수치다(LGU+ '2030년 5조 수주', 가온전선 'LSCUS 5조 장기공급'). 이런
+    금액이 시설 투자비로 오집계돼 점수가 부풀던 문제 교정 → 해당 문맥 금액은 제외.
     """
+    def _is_revenue_ctx(s: str, start: int, end: int) -> bool:
+        pre = s[max(0, start - 8):start]
+        post = s[end:end + 8]
+        if re.search(r"수주잔고|잔고|누적|매출|시장\s*규모", pre):
+            return True
+        if re.search(r"^\s*(원\s*)?(규모\s*)?(수주|수출|매출|시장)", post):
+            return True
+        return False
+
     vals: list[float] = []
     for m in re.finditer(r"(\d+(?:\.\d+)?)\s*조", text):
-        vals.append(float(m.group(1)) * 1_000_000_000_000)
+        if not _is_revenue_ctx(text, m.start(), m.end()):
+            vals.append(float(m.group(1)) * 1_000_000_000_000)
     for m in re.finditer(r"(\d[\d,]*)\s*억", text):
+        if _is_revenue_ctx(text, m.start(), m.end()):
+            continue
         try:
             vals.append(int(m.group(1).replace(",", "")) * 100_000_000)
         except ValueError:
@@ -2511,9 +2629,11 @@ def _news_out_of_scope(it: dict) -> str:
         return "조선·해양·송전 등 비시공영역"
     if _news_competitor_win(it):
         return "타 건설사 수주/낙찰 — 시공사 확정(우리 영업 불가)"
-    # 명확한 시공 신호(착공/신축/증설 등) 없는 단순 수주·투자·물량·펀드 → 공사수주 무관 가능성↑
-    if not any(a in _CONSTRUCTION_ACTIONS for a in _news_actions(it)):
-        return "시공 신호(착공/신축/증설) 없음 — 단순 수주/투자/물량"
+    if _news_is_component_supplier(it):
+        return "부품·소재·장비 공급사 — 시설 발주처 아님(시장동향)"
+    # 명확한 시공 신호(착공/증설/조성/설립+시설 등) 없는 단순 협력·투자·물량·루머 → 시장동향
+    if not _news_construction_signal(it):
+        return "시공 신호(착공/증설/조성 등) 없음 — 단순 협력/투자/물량"
     return ""
 
 
@@ -2533,19 +2653,21 @@ def _news_score(it: dict, source: str = "news_high") -> dict:
     is_done = any(("준공" in p or "완공" in p)
                   for p in patterns if p.startswith("action:"))
     has_area = any(p.startswith("area:") for p in patterns)
-    has_action = any(a in _CONSTRUCTION_ACTIONS for a in _news_actions(it))
+    has_signal = _news_construction_signal(it)
     amount = _news_amount_won(text)
     # 하드 제외 — 영업 범위 밖이면 무조건 C 강등 (시설/규모 점수 무효화):
     #   ① 비시설 노이즈 제목(금융·실적·사건·인사·행사·국책·칼럼·약가)
     #   ② 조선·해양플랜트·송전 등 비시공영역
     #   ③ 10조+ = 국가예산·해외펀딩·시장규모 매크로 아티팩트 (단일 공사 아님)
     #   ④ 타 건설사 수주/낙찰 = 시공사 확정 → 우리 영업 불가('뺏긴 건')
+    #   ⑤ 부품·소재·장비·전선 공급사 PR = 시설 발주처 아님 (가온전선 버스덕트 등)
     # (2조 비즈니스 상한은 2026-06-04 제거 — 큰 프로젝트일수록 큰 기회. 10조 가드만 유지)
     is_hard_oos = (any(k in title for k in _NEWS_NOISE_TITLE)
                    or _NEWS_NOISE_RE.search(title)
                    or amount >= _NEWS_MACRO_CEIL_WON
                    or any(k in text for k in _OUT_OF_SCOPE_KEYWORDS)
-                   or _news_competitor_win(it))
+                   or _news_competitor_win(it)
+                   or _news_is_component_supplier(it))
     # 시설 적합도(카테고리=시설점수)는 '실제 시설 프로젝트' 정황이 있을 때만 인정한다 (2026-06-05).
     #   ① 강한 시설 명사(공장/플랜트/팹/데이터센터 등 STRONG_TARGETS)가 제목·본문에 있고
     #   ② 시공행동·금액·면적 중 하나라도 동반될 것.
@@ -2557,7 +2679,7 @@ def _news_score(it: dict, source: str = "news_high") -> dict:
         for p in patterns if p.startswith("target:")
         for t in p[len("target:"):].split(",")
     )
-    corroborated = has_strong_target and (has_action or amount > 0 or has_area)
+    corroborated = has_strong_target and (has_signal or amount > 0 or has_area)
     cats = _news_cats(it) if (corroborated and not is_hard_oos) else []
     sc = score_opportunity(
         source=source, amount_won=(0 if is_hard_oos else amount), categories=cats,
@@ -2565,6 +2687,11 @@ def _news_score(it: dict, source: str = "news_high") -> dict:
     )
     if is_hard_oos:
         capped = min(sc["score"], 25)  # 영업 범위 밖은 무조건 C
+        return {"score": capped, "grade": grade_for(capped), "breakdown": sc["breakdown"]}
+    # 시공 신호 없는 산업뉴스(협력·동맹·투자·물량·루머)는 HIGH(S/A) 박탈 → MID(B) 상한.
+    # (정보 자체는 유지 — 시장동향 참조 탭에 노출. 진짜 시공 리드만 HIGH 에 남긴다.)
+    if not has_signal:
+        capped = min(sc["score"], 59)
         return {"score": capped, "grade": grade_for(capped), "breakdown": sc["breakdown"]}
     return sc
 

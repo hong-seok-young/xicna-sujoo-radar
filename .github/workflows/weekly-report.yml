@@ -151,7 +151,7 @@ jobs:
           username: ${{ secrets.SMTP_USER }}
           password: ${{ secrets.SMTP_PASS }}
           subject: "[수주레이더] ${{ env.KST_DATE }} 주간 리포트"
-          to: abcde@xicna.com, phm0802@xicna.com, yhchoi777@xicna.com, ykkim@xicna.com, hhssea21@xicna.com
+          to: abcde@xicna.com, phm0802@xicna.com, yhchoi777@xicna.com, ykkim@xicna.com, hhssea21@xicna.com, leeyuseob@xicna.com
           from: 수주레이더 봇 <${{ secrets.SMTP_USER }}>
           html_body: |
             <div style="font-family:-apple-system,'맑은 고딕','Malgun Gothic',sans-serif;max-width:560px;padding:20px;color:#222;line-height:1.6">

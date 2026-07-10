@@ -118,10 +118,15 @@ def test_dedup_topic_sig_honam_cluster():
     assert R._dedup_topic_sig(it) == ("호남권", "반도체", frozenset({"삼성", "SK"}))
 
 
-def test_dedup_topic_sig_none_for_other_company():
-    """앰코는 대형 플레이어 목록에 없음 → 토픽 시그니처 없음(호남 클러스터에 안 묶임)."""
-    it = {"title": "앰코, 광주에 1조 투자 검토…반도체 후공정 공장 증설", "content": ""}
-    assert R._dedup_topic_sig(it) is None
+def test_dedup_weak_sig_not_merged_into_player_cluster():
+    """앰코는 대형 플레이어 목록 밖 → 약한 프로젝트 시그니처(players=None, 2026-07-10).
+    지역·산업이 같아도 삼성·SK 강한 클러스터(플레이어 명시)와는 병합 금지(강-약 병합 안 함)."""
+    amkor = {"title": "앰코, 광주에 1조 투자 검토…반도체 후공정 공장 증설", "content": ""}
+    assert R._dedup_topic_sig(amkor) == ("호남권", "반도체", None)   # 약한 시그니처
+    samsung = {"title": "삼성·SK하이닉스, 호남 반도체 공장 검토", "content": ""}
+    ka = (R._dedup_title_tokens(amkor["title"]), R._dedup_topic_sig(amkor))
+    kb = (R._dedup_title_tokens(samsung["title"]), R._dedup_topic_sig(samsung))
+    assert R._dedup_same_event(ka, kb) is False
 
 
 def test_dedup_topic_sig_none_when_industry_absent_in_title():
@@ -167,3 +172,129 @@ def test_dedup_sections_collapse_and_preserve():
     assert any("앰코" in t for t in titles)           # 앰코 보존(별도)
     honam = [it for _, it, _ in H if "앰코" not in it["title"]][0]
     assert len(honam.get("_dups", [])) == 2          # 나머지 2건은 dups 로 보존(정보 유지)
+
+
+# ── 섹션 라벨 상한 / 상업가동 / 매출목표 (2026-07-10 P0~P1) ──────────────────
+# 2026-07-10 리포트: classify_rss 가 MID/LOW 판정한 기사가 _news_score 에서 시설점수+규모만으로
+# A/S 재진입해 '뉴스 HIGH(선제 접촉)'를 오염(테슬라 투자후퇴·러트닉 촉구·에코프로 유상증자 등).
+# 원칙: 오탐은 삭제가 아니라 참조탭으로 강등(재현율 우선). 진짜 리드(착공)는 HIGH 보존.
+
+_SECTION = {"S": "HIGH", "A": "HIGH", "B": "MID", "C": "LOW"}
+
+
+def _route(title: str, content: str = "", patterns=None) -> dict:
+    """리포트 파이프라인(build 3500~3511) 재현 → 최종 라벨/등급/섹션."""
+    it = _it(title, content, patterns)
+    lab, _rea = R.classify_rss(it)
+    if lab == "HIGH" and R._news_out_of_scope(it):
+        lab = "MID"
+    sc = R._news_score(it, R._news_source_for(lab))
+    return {"label": lab, "grade": sc["grade"], "score": sc["score"],
+            "section": _SECTION[sc["grade"]]}
+
+
+def test_negative_framing_demoted():
+    """투자 후퇴·비판 프레이밍(테슬라 '혈세·후퇴·미스터리')은 시설점수가 있어도 노이즈 강등.
+    (2026-07-10 균형 패스: news_mid 블랭킷 상한 대신 타깃 노이즈 게이트로 처리)"""
+    r = _route("10년간 1조 혈세 지원(테슬라)했는데 고용·투자·기부 '후퇴'...영업익 1%의 미스터리",
+               "테슬라코리아 국민 혈세 1조원. 기가팩토리 투자는 1424억원 수준.",
+               ["action:투자", "target:기가팩토리", "money:1424억"])
+    assert r["section"] != "HIGH" and r["grade"] == "C"
+
+
+def test_political_urging_demoted():
+    """정치·로비성(러트닉 美상무 '촉구')은 시설·규모가 있어도 노이즈 강등 — 실제 발주 아님."""
+    r = _route('"러트닉 美상무, 삼성·SK 미국 내 메모리 생산 확대 촉구"',
+               "러트닉 상무장관이 삼성·SK에 미국 내 생산 확대를 촉구. 마이크론 공장 언급.",
+               ["action:투자", "target:공장", "money:1000억"])
+    assert r["section"] != "HIGH"
+
+
+def test_recall_weak_action_big_facility_stays_high():
+    """약한 행동(투자)이라도 강한 시설+큰 금액이면 HIGH 유지 — 에어리퀴드 3천억 같은 진짜 리드 보존.
+    (news_mid 블랭킷 상한 제거의 핵심 목적: 리드를 MID 로 매장하지 않는다.)"""
+    r = _route("에어리퀴드, SK하이닉스와 3천억원 대규모 투자 발표",
+               "SK하이닉스 반도체 팹에 산업가스 공급 위한 3천억원 규모 신규 공장 투자.",
+               ["action:투자", "target:공장", "money:3천억"])
+    assert r["section"] == "HIGH"
+
+
+def test_p0_body_noise_capped_to_C():
+    """본문 노이즈(주가·유상증자 ≥2)로 LOW 판정된 기사 → C 강등 (news_low 상한 39)."""
+    r = _route("에코프로비엠, 끝내 주주에 손 벌린 이유",
+               "1조2000억원대 증자 추진. 유상증자로 양극재 시설 투자 재원 2000억. 지분 취득.",
+               ["action:투자,매입", "target:시설,양극재", "money:2000억"])
+    assert r["label"] == "LOW" and r["grade"] == "C" and r["score"] <= 39
+
+
+def test_p1_revenue_target_headline_demoted():
+    """'매출 N억 정조준' = 소재·부품사 판매확대 기사 → HIGH 박탈 (삼양사)."""
+    r = _route('삼양사, 반도체 초순수 핵심 이온교환수지…"매출 1200억원 정조준"',
+               "이온교환수지 매출을 1200억원까지 확대 목표. 데이터센터 투자로 반도체 팹 증설.",
+               ["action:증설,투자", "target:데이터센터,팹", "money:1200억"])
+    assert r["section"] != "HIGH"
+
+
+def test_p1_commercial_operation_demoted():
+    """'상업가동' = 다 지어진 공장 → 시공 완료로 LOW (엘앤에프 새만금)."""
+    r = _route("엘앤에프, LS와 전구체 내재화 속도…새만금 공장 4분기 상업가동",
+               "새만금 국가산업단지 내 NCM 전구체 공장을 4분기 상업가동한다.",
+               ["action:수주,가동", "target:공장,시설,단지"])
+    assert r["label"] == "LOW" and r["grade"] == "C"
+
+
+def test_p1_commercial_op_with_new_construction_survives():
+    """상업가동 언급이 있어도 신규 착공이 함께면 리드 유지 (over-cut 방지)."""
+    r = _route("OO바이오, 1공장 상업가동…송도 제2공장 착공",
+               "기존 1공장은 상업가동 중이며, 신규 제2공장을 착공한다.",
+               ["action:착공,가동", "target:공장"])
+    assert r["label"] != "LOW"
+
+
+def test_recall_genuine_groundbreaking_stays_high():
+    """실제 착공 리드(강한 행동+공장+면적)는 HIGH 유지 — 강등 로직이 리드를 죽이면 안 됨."""
+    r = _route("도우인시스, 베트남 제2공장 착공",
+               "베트남 제2공장(V2) 신축 착수. 착공식 개최. 7649평 UTG 생산능력 확대.",
+               ["action:착공,신축,착수", "target:공장,생산능력", "area:7649평"])
+    assert r["section"] == "HIGH"
+
+
+# ── DART2 IT/전산장비·SW 공급계약 게이트 (2026-07-10 P2⑤) ───────────────────
+# 데이타솔루션 'GPU 서버·HW/SW 공급'(삼성SDS 동탄DC) 4,381억 이 데이터센터 시설점수로 A 오르던 오탐.
+
+def test_dart2_it_supply_facility_zeroed():
+    """GPU·서버·HW/SW 공급 = 데이터센터 '건물' 시공 아님 → 시설점수 0 (A 진입 불가)."""
+    it = {"title": "[데이타솔루션] 단일판매ㆍ공급계약체결",
+          "content": "삼성SDS 동탄데이터센터 AI컴퓨팅자원 GPU 서버 외 AI인프라 구축용 HW,SW,Service 공급"}
+    assert R._is_it_supply_contract(it) is True
+    assert R._dart2_score(it)["breakdown"]["facility"] == 0
+
+
+def test_dart2_construction_work_keeps_facility():
+    """건축·설비 '공사' 표현이 있으면 IT 공급 아님 = 시설 시공 → 시설점수 유지."""
+    it = {"title": "[OO건설] 데이터센터 신축공사",
+          "content": "데이터센터 신축공사 및 기계설비 공사. 서버실 구축 포함."}
+    assert R._is_it_supply_contract(it) is False
+
+
+def test_dart2_semiconductor_supply_not_it():
+    """반도체 장비·소재 공급(CR/소부장)은 IT 공급 게이트에 안 걸림 (시설점수 유지)."""
+    it = {"title": "[OO소재] 반도체 특수가스 공급계약",
+          "content": "반도체 팹에 특수가스 및 포토레지스트 공급."}
+    assert R._is_it_supply_contract(it) is False
+
+
+# ── 이벤트 중복제거 — 약한 프로젝트 클러스터 (2026-07-10 P2⑥) ────────────────
+
+def test_dedup_merges_same_project_no_big_player():
+    """대형 플레이어 목록 밖 기업이라도 같은 프로젝트(새만금 전구체 공장)면 매체별 보도 병합."""
+    ka = _key("엘앤에프, LS와 전구체 내재화 속도…새만금 공장 4분기 상업가동")
+    kb = _key("LS엘앤에프배터리솔루션, 새만금 전구체 공장 4분기 상업 가동")
+    assert R._dedup_same_event(ka, kb) is True
+
+
+def test_dedup_weak_cluster_distinct_projects_not_merged():
+    """같은 지역·산업(호남 이차전지)이라도 다른 프로젝트(군산 양극재 vs 새만금 전구체)는 병합 금지."""
+    ka = _key("코스모신소재, 군산 양극재 공장 착공")
+    kb = _key("LS엘앤에프배터리솔루션, 새만금 전구체 공장 4분기 상업 가동")
+    assert R._dedup_same_event(ka, kb) is False

@@ -231,6 +231,21 @@ def _read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
+# ── 미래 시공 시그널 / 상업가동(완료) — classify_rss·_news_score 공용 (2026-07-10 모듈화) ──
+# 본문에 명백한 '신규 건설/신축 예정' 표현이 있으면 노이즈·정정 헤드라인이어도 리드로 살린다.
+EXPLICIT_FUTURE_CONSTRUCTION = (
+    "신규 건설", "신축 예정", "착공 예정", "기공 예정",
+    "신축 계획", "건립 예정", "신규로 건설", "신축할",
+    "신규 공장", "제2공장 신축", "제3공장 신축", "제4공장 신축", "제5공장 신축",
+    "신규 공장 건설", "신규 생산시설", "신규 생산 시설",
+)
+# 상업가동/양산 개시 = 시공 완료(영업 골든타임 너머). 준공/완공과 동급 late-stage 로 강등.
+# (엘앤에프 '새만금 공장 4분기 상업가동' 처럼 다 지어진 공장의 가동 뉴스는 시공 기회 없음.)
+_COMMERCIAL_OP_RE = re.compile(
+    r"상업\s*가동|상업\s*생산|상업\s*운전|"
+    r"양산\s*(개시|돌입|착수|진입|시작|들어)|상업화\s*(가동|생산)")
+
+
 def classify_rss(item: dict) -> tuple[str, str]:
     patterns = item.get("stage1_matched_patterns", []) or []
     title = item.get("title", "")
@@ -279,20 +294,20 @@ def classify_rss(item: dict) -> tuple[str, str]:
     noise_hits = [k for k in NOISE_KEYWORDS if k in text]
     is_noisy = len(noise_hits) >= 2 or any(k in title for k in NOISE_KEYWORDS)
 
-    # 본문 깊숙히 명백한 미래 시공 시그널이 있으면 노이즈 무시 — over-cut 보정.
-    # 예: 셀트리온 "AX 투트랙" 기사 — 제목엔 'AI 도입' 노이즈지만 본문에
-    # "송도에 신규 건설 예정인 원료의약품 4·5공장" 명시 → 영업 가치 있음.
-    EXPLICIT_FUTURE_CONSTRUCTION = (
-        "신규 건설", "신축 예정", "착공 예정", "기공 예정",
-        "신축 계획", "건립 예정", "신규로 건설", "신축할",
-        "신규 공장", "제2공장 신축", "제3공장 신축", "제4공장 신축", "제5공장 신축",
-        "신규 공장 건설", "신규 생산시설", "신규 생산 시설",
-    )
+    # 본문 깊숙히 명백한 미래 시공 시그널(EXPLICIT_FUTURE_CONSTRUCTION, 모듈 상수)이 있으면
+    # 노이즈 무시 — over-cut 보정. 예: 셀트리온 "AX 투트랙" 기사 — 제목엔 'AI 도입' 노이즈지만
+    # 본문에 "송도에 신규 건설 예정인 원료의약품 4·5공장" 명시 → 영업 가치 있음.
     has_explicit_future = any(k in text for k in EXPLICIT_FUTURE_CONSTRUCTION)
 
     # 카테고리 '기타' = 산업키워드 0개. HIGH 자격 박탈 (산업 매칭 없으면 무조건 강등).
     cats = _news_cats(item)
     has_industry_category = bool(cats) and cats != ["기타"]
+
+    # 상업가동/양산 개시 = 시공 완료(영업 골든타임 너머) → LOW. HIGH 룰보다 먼저 컷해
+    # 스치듯 매칭된 '수주/가동' 토큰이 다 지어진 공장을 HIGH 로 올리는 것을 막는다.
+    # 단, 착공/신축 등 미래 시공 시그널이 함께면 혼합기사로 보고 아래 HIGH 룰에 맡긴다.
+    if _COMMERCIAL_OP_RE.search(text) and not (has_construction_action or has_explicit_future):
+        return "LOW", "상업가동/양산 개시 — 시공 완료, 영업 무관"
 
     if has_strong_action and has_strong_target and (has_money or has_area) and not is_noisy and has_industry_category:
         return "HIGH", "강한 행동+대상+규모 매칭"
@@ -2518,6 +2533,12 @@ _NEWS_NOISE_TITLE = (
     "어워즈", "시상", "시상식", "수상자",                       # 시상·행사
     "객석", "월요객석", "(월요", "(데스크", "[데스크", "[기자",  # 칼럼·사설류
     "AX 가속", "대전환 못하면", "영토 확장",                    # AI전환 트렌드/비유 헤드라인
+    # === 2026-07-10 균형 패스 — news_mid 블랭킷 상한 제거 대신 타깃 노이즈만 강등 ===
+    # (진짜 시설 리드 제목엔 이 단어가 거의 없음 → 재현율 손실 최소. 대부분 정치·비판·제품·주식.)
+    "후퇴", "혈세", "미스터리",                                 # 투자 후퇴·비판 기사 (테슬라 기여도 제로 등)
+    "촉구", "준감위", "특혜론", "논평", "성명서",                # 정치·로비성 (러트닉 촉구, 삼성 준감위)
+    "샘플 출하", "특허", "논문", "출원",                        # 제품·IP PR (HBM 샘플 출하, 특허 10만, 논문 선정)
+    "대박", "시선집중", "관심 종목", "유망 종목",                # 주식 종목 추천
 )
 
 # 실적/매출 기사 패턴 — 단어 하나로는 못 잡는 '매출 N% 성장', 'N% 증가' 등 (제목 대상).
@@ -2526,6 +2547,8 @@ _NEWS_NOISE_RE = re.compile(
     r"매출.{0,8}(성장|증가|감소|돌파|기록|급증|급감|역성장)"
     r"|\d+\s*%\s*(성장|증가|감소|급증|급감|돌파)"
     r"|수출.{0,10}(억\s*弗|억\s*달러|억弗|찍나|돌파|역대)"   # 수출 실적·통계 (반도체 수출 3500억弗 등)
+    # 매출목표 헤드라인 = 소재·부품사 판매확대 기사(시설 발주 아님). 삼양사 '매출 1200억원 정조준' 등.
+    r"|매출\s*[\d,.]+\s*(억|조)\s*원?.{0,6}(정조준|겨냥|목표|노린|달성|돌파|확대|기대)"
 )
 
 # 매크로 아티팩트 가드 (2026-06-04): '2조 비즈니스 상한'은 제거했지만, 뉴스 본문 자유텍스트는
@@ -2565,11 +2588,16 @@ _AWARDED_RE = re.compile(
 
 
 def _news_competitor_win(it: dict) -> bool:
-    """타 건설사가 이미 수주/낙찰 = 시공사 확정 → 우리 영업 기회 아님."""
+    """타 건설사가 이미 수주/낙찰 = 시공사 확정, 또는 신사업 진출 = 경쟁사 동향 → 우리 영업 기회 아님."""
     title = it.get("title", "") or ""
     if _AWARDED_RE.search(title):
         return True
     if any(c in title for c in _CONTRACTOR_NAMES) and re.search(r"수주|낙찰|시공|도급|착공|준공", title):
+        return True
+    # 건설사 신사업/영역 확장 = 경쟁사 동향 (우리 발주 대상 아님). 제목 기준 — 발주처 오컷 방지.
+    # (GS건설 '데이터센터 진출', 대우건설 '에너지 플랜트 영역 확장' 등)
+    if any(c in title for c in _CONTRACTOR_NAMES) and re.search(
+            r"진출|영역\s*확장|영역\s*확대|포트폴리오|출사표|새\s*먹거리|신사업", title):
         return True
     return False
 
@@ -2652,6 +2680,11 @@ def _news_score(it: dict, source: str = "news_high") -> dict:
     patterns = it.get("stage1_matched_patterns") or []
     is_done = any(("준공" in p or "완공" in p)
                   for p in patterns if p.startswith("action:"))
+    # 상업가동/양산 개시도 시공 완료로 간주 (착공/신축 등 미래 시공 시그널이 없을 때만).
+    if _COMMERCIAL_OP_RE.search(text) and not (
+            any(a in CONSTRUCTION_ACTIONS for a in _news_actions(it))
+            or any(k in text for k in EXPLICIT_FUTURE_CONSTRUCTION)):
+        is_done = True
     has_area = any(p.startswith("area:") for p in patterns)
     has_signal = _news_construction_signal(it)
     amount = _news_amount_won(text)
@@ -2685,15 +2718,22 @@ def _news_score(it: dict, source: str = "news_high") -> dict:
         source=source, amount_won=(0 if is_hard_oos else amount), categories=cats,
         is_new=True, has_site=(has_area and not is_hard_oos), is_done=is_done,
     )
+    score = sc["score"]
     if is_hard_oos:
-        capped = min(sc["score"], 25)  # 영업 범위 밖은 무조건 C
-        return {"score": capped, "grade": grade_for(capped), "breakdown": sc["breakdown"]}
+        score = min(score, 25)  # 영업 범위 밖은 무조건 C
     # 시공 신호 없는 산업뉴스(협력·동맹·투자·물량·루머)는 HIGH(S/A) 박탈 → MID(B) 상한.
     # (정보 자체는 유지 — 시장동향 참조 탭에 노출. 진짜 시공 리드만 HIGH 에 남긴다.)
-    if not has_signal:
-        capped = min(sc["score"], 59)
-        return {"score": capped, "grade": grade_for(capped), "breakdown": sc["breakdown"]}
-    return sc
+    elif not has_signal:
+        score = min(score, 59)
+    # ── news_low 상한 — classify LOW(노이즈·준공·약한행동)는 C 확정 (2026-07-10) ──
+    # 전체 아카이브 백테스트 결과: news_mid 블랭킷 상한은 시설·규모로 A 에 오를 진짜 리드
+    # (에어리퀴드 3천억·삼성 베트남 2.2조 공장·포항 LFP 첫삽 등)까지 MID 로 매장했다.
+    # → mid 상한은 제거하고(리드 보존), 진짜 노이즈(테슬라 후퇴·러트닉 촉구·경쟁사·주식)는
+    #   아래 is_hard_oos 게이트(_NEWS_NOISE_TITLE·경쟁사)로 타깃 강등한다.
+    # low 상한만 유지 — classify LOW 는 노이즈/준공/약한행동이라 시설점수로 A 오르면 오탐.
+    if source == "news_low":
+        score = min(score, 39)
+    return {"score": score, "grade": grade_for(score), "breakdown": sc["breakdown"]}
 
 
 def _dart2_competitor_gc(it: dict) -> bool:
@@ -2704,11 +2744,36 @@ def _dart2_competitor_gc(it: dict) -> bool:
     return any(c in corp for c in _CONTRACTOR_NAMES)
 
 
+# IT·전산장비·SW 공급계약 = 데이터센터 '건물' 시공이 아니라 안에 들어가는 컴퓨팅 장비/SW 납품.
+# 자이는 시설(건물·전기·냉각)을 짓는 시공사 → GPU/서버/SW 공급은 우리 발주 대상 아님(동향용).
+# (데이타솔루션 '삼성SDS 동탄DC GPU서버·HW/SW 공급' 4,381억 이 데이터센터 시설점수 27로 A 오르던 오탐.)
+_IT_SUPPLY_GOODS_RE = re.compile(
+    r"GPU|그래픽카드|서버|스토리지|스위치|네트워크\s*장비|전산\s*장비|"
+    r"H/?W|S/?W|소프트웨어|솔루션|라이선스|라이센스|미들웨어|"
+    r"컴퓨팅\s*자원|클라우드\s*서비스|시스템\s*통합")
+# 건축·전기·설비 '공사' 표현이 있으면 시설 시공이므로 IT 공급 예외 (시설점수 유지).
+_CONSTRUCTION_WORK_RE = re.compile(
+    r"신축|증축|건축|토목|골조|철골|외장|마감|전기\s*공사|설비\s*공사|기계\s*설비|"
+    r"냉난방|냉동공조|공조\s*공사|배관\s*공사|소방\s*공사|정보통신\s*공사|건설\s*공사|시설\s*공사")
+
+
+def _is_it_supply_contract(it: dict) -> bool:
+    """IT·전산장비·SW 공급계약 여부 — 데이터센터 '시설 시공'이 아닌 장비/SW 납품 판별.
+
+    컴퓨팅 goods(GPU·서버·HW/SW 등)가 있고, 건축·전기·설비 '공사' 표현이 없을 때만 True.
+    (반도체 장비/소재 공급(소부장, CR)은 여기 안 걸려 시설점수 유지 — IT/전산에 한정.)
+    """
+    text = f"{it.get('title','')} {it.get('content','') or ''}"
+    return bool(_IT_SUPPLY_GOODS_RE.search(text)) and not _CONSTRUCTION_WORK_RE.search(text)
+
+
 def _dart2_score(it: dict) -> dict:
     """DART 2차 공급계약 발주가능성 점수 (이미 시공사 확정 — 협력사/경쟁사 동향용)."""
+    it_supply = _is_it_supply_contract(it)
+    cats = ["기타"] if it_supply else _cats_for(it)  # IT/전산 공급 → 시설점수 무효화
     sc = score_opportunity(
         source="dart2", amount_won=_extract_dart_contract_amount(it),
-        categories=_cats_for(it), is_new=not _is_dart_correction(it), has_site=True,
+        categories=cats, is_new=not _is_dart_correction(it), has_site=not it_supply,
     )
     if _dart2_competitor_gc(it):
         capped = min(sc["score"], 30)  # 경쟁 건설사 수주 — 시공 확정, C 동향용
@@ -3194,7 +3259,7 @@ _DEDUP_REGIONS = (
 _DEDUP_INDUSTRY = (
     ("반도체", r"반도체|파운드리|패키징|후공정|전공정|HBM|D램|낸드|소부장"),
     ("데이터센터", r"데이터센터|IDC|AIDC|하이퍼스케일"),
-    ("이차전지", r"이차전지|배터리|양극재|음극재|전해질|분리막"),
+    ("이차전지", r"이차전지|배터리|양극재|음극재|전해질|분리막|전구체"),
     ("바이오", r"바이오의약|제약바이오|백신|원료의약품|CDMO"),
     ("디스플레이", r"디스플레이|OLED|LCD"),
 )
@@ -3214,6 +3279,11 @@ def _dedup_topic_sig(it: dict):
     industry = next((n for n, p in _DEDUP_INDUSTRY if re.search(p, title)), None)
     if players and region and industry and _DEDUP_FACILITY.search(title):
         return (region, industry, players)
+    # 대형 플레이어 목록 밖 기업이라도 지역+산업+시설이 제목에 다 있으면 '약한 프로젝트 클러스터'.
+    # players=None 표식 — 병합은 지역·산업 동일 + 제목 토큰 유사도(_dedup_same_event)가 동반될 때만.
+    # (엘앤에프/LS 처럼 같은 '새만금 전구체 공장' 프로젝트를 매체별로 병합하기 위함.)
+    if region and industry and _DEDUP_FACILITY.search(title):
+        return (region, industry, None)
     return None
 
 
@@ -3225,10 +3295,14 @@ def _dedup_same_event(ka, kb) -> bool:
     (ta, sa), (tb, sb) = ka, kb
     if _dedup_jaccard(ta, tb) >= 0.6:            # 거의 동일한 기사 (통신사 받아쓰기 등)
         return True
-    if sa and sb:                                 # 토픽: 지역·산업 동일 + 플레이어 교집합
+    if sa and sb:                                 # 토픽: 지역·산업 동일
         (ra, ia, pa), (rb, ib, pb) = sa, sb
-        if ra == rb and ia == ib and (pa & pb):
-            return True
+        if ra == rb and ia == ib:
+            if pa and pb and (pa & pb):           # 강: 플레이어 교집합
+                return True
+            # 약: 플레이어 미상(프로젝트 클러스터) — 제목 토큰 유사가 동반될 때만 병합.
+            if pa is None and pb is None and _dedup_jaccard(ta, tb) >= 0.3:
+                return True
     return False
 
 

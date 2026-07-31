@@ -3447,6 +3447,26 @@ def render_dashboard(scored: list[dict]) -> str:
     return f'<div class="dashboard">{cards}{table}</div>'
 
 
+def _safe_card(render, *args, **kwargs) -> str:
+    """카드 1건 렌더링을 감싼다 — 한 건이 터져도 리포트 전체를 죽이지 않는다.
+
+    배경(2026-07-31): 파이프라인 step 하나가 exit 1 이면 주간 발송이 통째로 스킵됐다.
+    리포트 생성은 '리포트 없음 = 완전 실패' 라 --allow-partial 로도 못 구제되므로,
+    개별 항목의 예상 못 한 데이터 형태는 그 항목만 건너뛰고 나머지를 발송한다.
+    """
+    try:
+        return render(*args, **kwargs)
+    except Exception as e:  # noqa: BLE001 — 항목 1건 때문에 주간 발송이 죽는 게 더 나쁘다
+        ident = ""
+        for a in args:
+            if isinstance(a, dict):
+                ident = (a.get("title") or a.get("url") or a.get("id") or "")[:120]
+                break
+        print(f"  ! 카드 렌더 실패 — 건너뜀 ({render.__name__}): "
+              f"{type(e).__name__}: {e} | {ident}", flush=True)
+        return ""
+
+
 def main():
     ap = argparse.ArgumentParser()
     today_str = datetime.now(KST).strftime("%Y-%m-%d")
@@ -3784,7 +3804,7 @@ def main():
                 f'🆕 신규시설투자 — 신규 ({len(dart_primary_new)}건) · 발주 임박, 영업 1순위</td></tr>\n'
             )
             for i, it in enumerate(dart_primary_new, 1):
-                parts.append(render_dart_primary_card(it, i, group="dart1-new"))
+                parts.append(_safe_card(render_dart_primary_card, it, i, group="dart1-new"))
         # 신규시설투자등 — 정정 그룹 (중간)
         if dart_primary_corr:
             base = len(dart_primary_new)
@@ -3795,7 +3815,7 @@ def main():
                 f'✏️ 신규시설투자 — 정정 ({len(dart_primary_corr)}건) · 기존 공시 변경, 참고 자료</td></tr>\n'
             )
             for i, it in enumerate(dart_primary_corr, 1):
-                parts.append(render_dart_primary_card(it, base + i, group="dart1-corr"))
+                parts.append(_safe_card(render_dart_primary_card, it, base + i, group="dart1-corr"))
         # 유형자산 취득결정 그룹 (최하단) — 별도 본문 구조, 같은 7컬럼 의미 매핑
         if dart_primary_asset:
             base = len(dart_primary_new) + len(dart_primary_corr)
@@ -3809,7 +3829,7 @@ def main():
                 f'</td></tr>\n'
             )
             for i, it in enumerate(dart_primary_asset, 1):
-                parts.append(render_dart_asset_card(it, base + i, group="dart1-asset"))
+                parts.append(_safe_card(render_dart_asset_card, it, base + i, group="dart1-asset"))
         parts.append("    </tbody></table>")
 
     # === RSS HIGH ===
@@ -3824,7 +3844,7 @@ def main():
     <tbody>
 """)
         for i, (reason, it, source) in enumerate(rss_high, 1):
-            parts.append(render_rss_high_card(reason, it, i, source))
+            parts.append(_safe_card(render_rss_high_card, reason, it, i, source))
         parts.append("    </tbody></table>")
 
     # === MFDS GMP (DART 2차 위로 이동 — 사용자 우선순위 조정) ===
@@ -3866,7 +3886,7 @@ def main():
     <tbody>
 """)
         for i, (_, group_items) in enumerate(mfds_groups, 1):
-            parts.append(render_mfds_company_row(group_items, i, today_d=today_d))
+            parts.append(_safe_card(render_mfds_company_row, group_items, i, today_d=today_d))
         parts.append("    </tbody></table>")
 
     # === DART 2차 (참조 — 시공사 이미 확정된 케이스, 영업 직접 대상 아님. 기본 접힘) ===
@@ -3889,7 +3909,7 @@ def main():
                 f'🆕 신규 공급계약 ({len(dart_secondary_new)}건) · 시공사 확정·발주처 식별</td></tr>\n'
             )
             for i, it in enumerate(dart_secondary_new, 1):
-                parts.append(render_dart_secondary_row(it, i, group="dart2-new"))
+                parts.append(_safe_card(render_dart_secondary_row, it, i, group="dart2-new"))
         # 정정 그룹 (아래)
         if dart_secondary_corr:
             base = len(dart_secondary_new)
@@ -3900,7 +3920,7 @@ def main():
                 f'✏️ 정정 공급계약 ({len(dart_secondary_corr)}건) · 기존 계약 금액·기간 변경</td></tr>\n'
             )
             for i, it in enumerate(dart_secondary_corr, 1):
-                parts.append(render_dart_secondary_row(it, base + i, group="dart2-corr"))
+                parts.append(_safe_card(render_dart_secondary_row, it, base + i, group="dart2-corr"))
         parts.append("    </tbody></table>")
 
     # === RSS MID ===
@@ -3915,7 +3935,7 @@ def main():
     <tbody>
 """)
         for i, (reason, it, source) in enumerate(rss_mid, 1):
-            parts.append(render_rss_mid_row(reason, it, i, source))
+            parts.append(_safe_card(render_rss_mid_row, reason, it, i, source))
         parts.append("    </tbody></table>")
 
     # === RSS LOW ===
@@ -3930,7 +3950,7 @@ def main():
     <tbody>
 """)
         for i, (reason, it, source) in enumerate(rss_low, 1):
-            parts.append(render_rss_low_row(reason, it, i, source))
+            parts.append(_safe_card(render_rss_low_row, reason, it, i, source))
         parts.append("    </tbody></table>")
 
     # === G2B (관급 — 영업 대상 아님, 기본 접힘. 페이지 맨 아래로 배치) ===
@@ -3945,7 +3965,7 @@ def main():
     <tbody>
 """)
         for i, it in enumerate(g2b_items, 1):
-            parts.append(render_g2b_card(it, i))
+            parts.append(_safe_card(render_g2b_card, it, i))
         parts.append("    </tbody></table>")
 
     # === Footer ===

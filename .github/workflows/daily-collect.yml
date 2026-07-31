@@ -27,16 +27,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: 'pip'
 
       - name: Restore/seed RSS pool cache (data/pool)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: data/pool
           # run_number 로 매번 새 키 → 항상 저장. restore-keys 로 직전 풀 복원.
@@ -73,7 +73,7 @@ jobs:
       # ──────────────────────────────────────────────────────────
       - name: 🚨 실패 알림 메일 (운영자 전용)
         if: failure()
-        uses: dawidd6/action-send-mail@v3
+        uses: dawidd6/action-send-mail@v18
         with:
           server_address: smtp.gmail.com
           server_port: 587

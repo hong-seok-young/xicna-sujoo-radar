@@ -124,8 +124,19 @@ def main():
                     help="동별 GMP 보유 수 임계 (기본 2 — 단발성 X)")
     args = ap.parse_args()
 
-    snap = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
-    items = snap["items"]
+    # 스냅샷은 MFDS 수집 단계(src/stage0_collect/mfds_gmp.py)가 남긴다.
+    # 그 단계가 키 누락·API 장애로 건너뛰어지면 파일이 없다 — 이건 '보강할 새 데이터가
+    # 없음' 이지 에러가 아니다. 예전엔 여기서 FileNotFoundError 로 죽어 파이프라인이
+    # exit 1 → 주간 발송 전체가 스킵됐다 (2026-07-31 발사 실패 원인).
+    if not SNAPSHOT.exists():
+        print(f"MFDS 스냅샷 없음 ({SNAPSHOT}) - 보강 생략 (MFDS 수집 단계 확인 필요)")
+        return
+    try:
+        snap = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+        items = snap["items"]
+    except (json.JSONDecodeError, KeyError, OSError) as e:
+        print(f"MFDS 스냅샷 읽기 실패 ({type(e).__name__}: {e}) - 보강 생략")
+        return
     print(f"MFDS 스냅샷 {len(items)} 건 로드")
 
     legal, legal_fb = load_legal_dong()

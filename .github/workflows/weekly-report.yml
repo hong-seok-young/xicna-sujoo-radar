@@ -7,6 +7,11 @@ on:
     # 목표: 금 07:00 KST 안팎 도착 (예약 07:00인데 실제 08:30까지 밀리던 드리프트 보정, 2026-06-19 조정)
     # daily-collect(21:00 UTC)보다 40분 뒤 → 수집→병합 순서 유지.
     - cron: '40 21 * * 4'
+    # 백업 슬롯 — GitHub 이 예약 이벤트를 통째로 드롭하는 경우 대비 (2026-08-28 실제 발생:
+    # 목 21:40 UTC 이벤트가 아예 안 떠서 run 조차 없었고, run 이 없으니 실패 알림도 없었다).
+    # 세 슬롯 중 먼저 발송에 성공한 것만 나가고, 나머지는 precheck 에서 자동으로 건너뛴다.
+    - cron: '40 22 * * 4'   # 금 07:40 KST
+    - cron: '40 1 * * 5'    # 금 10:40 KST
   workflow_dispatch:
     inputs:
       send_email:
@@ -16,6 +21,7 @@ on:
 
 permissions:
   contents: write
+  actions: read   # ci_weekly_guard 가 이전 run 의 발송 여부를 조회
 
 # 풀(캐시) 동시 쓰기 방지 — 일일 수집(daily-collect)과 같은 그룹으로 직렬화
 concurrency:
@@ -23,7 +29,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 백업 슬롯이 여러 개라 '이미 오늘 발송됐으면 건너뛴다' 판정이 먼저 필요하다.
+  # 수동 dispatch 는 항상 진행 (재발송 의도를 막지 않음).
+  precheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      skip: ${{ steps.guard.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/ci_weekly_guard.py --mode guard
+
   generate-and-publish:
+    needs: precheck
+    # precheck 가 (API 장애 등으로) 실패해도 발송은 진행한다 — 중복보다 누락이 나쁘다.
+    # 'skip=true' 라고 명시적으로 판정났을 때만 건너뛴다.
+    if: ${{ !cancelled() && needs.precheck.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -183,12 +213,18 @@ jobs:
           echo "ATT_PATH=data/$ATT_NAME" >> $GITHUB_ENV
           echo "  첨부 파일: $ATT_NAME ($(stat -c%s "data/$ATT_NAME") bytes)"
 
+      - name: 발송 직전 중복 확인 (지연된 앞 슬롯이 이미 보냈는지)
+        id: presend
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/ci_weekly_guard.py --mode guard
+
       - name: Send email — 짧은 안내 + 첨부파일 (본문 인라인 X)
         # 정기 스케줄(금 07:00)은 항상 영업팀 발송.
         # 수동 재실행(workflow_dispatch)은 기본적으로 docs/Pages 갱신만 하고 메일은 안 보냄
         # (보고서 수정본 재발행 시 중복메일 방지). 단, 발사 실패한 주차를 되살릴 때는
         # Run workflow 에서 send_email 을 체크하면 그 회차도 영업팀에 발송된다.
-        if: github.event_name == 'schedule' || inputs.send_email
+        if: (github.event_name == 'schedule' || inputs.send_email) && steps.presend.outputs.skip != 'true'
         uses: dawidd6/action-send-mail@v18
         with:
           server_address: smtp.gmail.com

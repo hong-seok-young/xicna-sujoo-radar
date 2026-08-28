@@ -23,9 +23,11 @@ def test_kst_date_crosses_midnight():
 
 
 @pytest.mark.parametrize("now, expected", [
-    # 금요일 오전(일일 수집 06:00) — 이번 주 발송 전이므로 지난주 금요일을 본다
+    # 금요일 이른 아침(일일 수집 06:00) — 이번 주 발송 전이므로 지난주 금요일을 본다
     (datetime(2026, 8, 28, 6, 0, tzinfo=KST), "2026-08-21"),
-    # 금요일 12:00 이후 — 백업 슬롯까지 끝났으므로 오늘이 대상
+    (datetime(2026, 8, 28, 10, 59, tzinfo=KST), "2026-08-21"),
+    # 금 11:00(감시 슬롯) 이후 — 자동 시도 3회가 끝났을 시각이므로 오늘이 대상
+    (datetime(2026, 8, 28, 11, 0, tzinfo=KST), "2026-08-28"),
     (datetime(2026, 8, 28, 12, 0, tzinfo=KST), "2026-08-28"),
     (datetime(2026, 8, 28, 23, 59, tzinfo=KST), "2026-08-28"),
     # 토·일·월 — 직전 금요일
@@ -87,3 +89,16 @@ def test_self_run_excluded(monkeypatch):
     monkeypatch.setattr(guard, "_api", _fake_api(runs, jobs))
     sent, _ = guard.mail_sent_on("2026-08-28", "tok", "o/r", exclude_run_id="9")
     assert not sent
+
+
+def test_run_in_flight_suppresses_false_alarm(monkeypatch):
+    # 예약이 크게 밀려 감시 시각에 아직 발송이 돌고 있으면 '누락' 알림을 보내면 안 된다
+    runs = [dict(_run(4, 33, "2026-08-27T21:45:00Z"), status="in_progress")]
+    monkeypatch.setattr(guard, "_api", _fake_api(runs, {}))
+    assert guard.run_in_flight("2026-08-28", "tok", "o/r") is True
+
+
+def test_run_in_flight_false_when_all_completed(monkeypatch):
+    runs = [dict(_run(5, 34, "2026-08-27T21:45:00Z"), status="completed")]
+    monkeypatch.setattr(guard, "_api", _fake_api(runs, {}))
+    assert guard.run_in_flight("2026-08-28", "tok", "o/r") is False

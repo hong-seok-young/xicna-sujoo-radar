@@ -10,6 +10,10 @@ on:
   schedule:
     # 매일 06:00 KST (전일 21:00 UTC). GitHub schedule 5~30분 지연 감안.
     - cron: '0 21 * * *'
+    # 금 11:00 KST — '주간 발송 누락 감시' 전용 슬롯. weekly 마지막 자동 시도(금 09:40)가
+    # 지연을 감안해도 끝난 시각이라, 여기서 미발송이면 진짜 누락 → 금요일 오전 중에 알린다.
+    # (RSS 수집도 같이 한 번 더 도는데 멱등이라 무해하고 풀도 최신화된다)
+    - cron: '0 2 * * 5'
   workflow_dispatch:
 
 permissions:

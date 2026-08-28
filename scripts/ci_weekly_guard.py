@@ -32,6 +32,11 @@ API = "https://api.github.com"
 WEEKLY_WORKFLOW = "weekly-report.yml"
 MAIL_STEP_PREFIX = "Send email"   # 워크플로의 영업팀 발송 스텝 이름 접두사
 
+# 금요일 몇 시(KST)부터 '오늘 발송은 끝났어야 한다' 고 볼 것인가.
+# weekly 마지막 자동 슬롯이 금 09:40 예약 → GitHub 지연(+25~70분) 감안해도 11:00 전엔 끝난다.
+# 이 시각을 넘겨 발송 기록이 없으면 진짜 누락 → 금요일 오전 중에 알린다.
+FRIDAY_DEADLINE_HOUR = 11
+
 
 def _api(path: str, token: str) -> dict:
     req = urllib.request.Request(
@@ -53,14 +58,14 @@ def kst_date(iso_utc: str) -> str:
 def last_completed_friday(now_kst: datetime) -> str:
     """가장 최근에 '발송 시간대가 지나간' 금요일 (KST, YYYY-MM-DD).
 
-    금요일 12:00 KST 를 기준선으로 둔다. 백업 슬롯(최대 10:40 KST 예약)까지 끝난 뒤라
-    그때도 발송이 없으면 진짜 누락이다. 금요일 오전(일일 수집 06:00)에는 아직
-    이번 주 발송 전이므로 지난주 금요일을 본다.
+    FRIDAY_DEADLINE_HOUR(11시 KST)를 기준선으로 둔다. 자동 슬롯 3개(06:40·07:40·09:40)가
+    지연을 감안해도 끝난 시각이라, 그때도 발송이 없으면 진짜 누락이다.
+    금요일 이른 아침(일일 수집 06:00)에는 아직 이번 주 발송 전이므로 지난주 금요일을 본다.
     """
     d = now_kst
     while True:
         if d.weekday() == 4:  # 금요일
-            deadline = d.replace(hour=12, minute=0, second=0, microsecond=0)
+            deadline = d.replace(hour=FRIDAY_DEADLINE_HOUR, minute=0, second=0, microsecond=0)
             if now_kst >= deadline:
                 return d.strftime("%Y-%m-%d")
         d -= timedelta(days=1)
@@ -83,6 +88,24 @@ def mail_sent_on(date_kst: str, token: str, repo: str, exclude_run_id: str = "")
                 if step["name"].startswith(MAIL_STEP_PREFIX) and step["conclusion"] == "success":
                     return True, f"run #{run['run_number']} 이 {date_kst} 에 발송 완료"
     return False, f"{date_kst} 발송 기록 없음 (해당일 run {checked}건 확인)"
+
+
+def run_in_flight(date_kst: str, token: str, repo: str, exclude_run_id: str = "") -> bool:
+    """해당 KST 날짜에 아직 끝나지 않은 weekly run 이 있나? (있으면 '누락' 판정 보류)
+
+    예약이 크게 지연돼 감시 시각에 발송이 아직 진행 중일 수 있다. 그때 알림을 보내면
+    허위 경보가 된다.
+    """
+    runs = _api(f"/repos/{repo}/actions/workflows/{WEEKLY_WORKFLOW}/runs?per_page=20",
+                token).get("workflow_runs", [])
+    for run in runs:
+        if kst_date(run["created_at"]) != date_kst:
+            continue
+        if exclude_run_id and str(run["id"]) == str(exclude_run_id):
+            continue
+        if run["status"] != "completed":
+            return True
+    return False
 
 
 def _emit(github_output_lines: list[str]) -> None:
@@ -136,6 +159,10 @@ def main() -> int:
         sent, why = mail_sent_on(target, token, repo)
     except (urllib.error.URLError, urllib.error.HTTPError, KeyError, ValueError) as e:
         print(f"점검 실패({type(e).__name__}: {e}) — 알림 생략")
+        _emit([("GITHUB_ENV", ["WEEKLY_MISSING=0"])])
+        return 0
+    if not sent and run_in_flight(target, token, repo):
+        print(f"보류: {target} weekly run 이 아직 진행 중 — 알림 생략")
         _emit([("GITHUB_ENV", ["WEEKLY_MISSING=0"])])
         return 0
     print(("정상: " if sent else "누락 감지: ") + why)
